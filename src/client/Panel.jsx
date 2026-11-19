@@ -92,8 +92,8 @@ export function KitForecastPanel({ ctx }) {
   const [suggestions, setSuggestions] = React.useState([])
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [selected, setSelected] = React.useState(null)
-  const [scale, setScale] = React.useState('1d')
-  const [quality, setQuality] = React.useState('standard')
+  const [scale, setScale] = React.useState('1m')
+  const [quality, setQuality] = React.useState('fine')
   const [applyLimit, setApplyLimit] = React.useState(true)
   const [autoRefresh, setAutoRefresh] = React.useState(true)
   const [comparePast, setComparePast] = React.useState(true)   // 图上叠加历史预测
@@ -381,6 +381,8 @@ export function KitForecastPanel({ ctx }) {
   const [tickState, setTickState] = React.useState('idle') // idle | ok | fail
   // 心跳拿到的实时盘口：独立于预测结果，盘中每分钟都会更新
   const [liveQuote, setLiveQuote] = React.useState(null)
+  // 未收盘那根 K 线：用于图上画一根会长的动态蜡烛
+  const [liveCandle, setLiveCandle] = React.useState(null)
   const lastRunAnchorRef = React.useRef(null)
 
   /**
@@ -413,6 +415,7 @@ export function KitForecastPanel({ ctx }) {
         setTickAt(Date.now())
         setTickState('ok')
         if (data?.quote) setLiveQuote({ ...data.quote, code })
+        setLiveCandle(data?.forming ?? null)
         // B. 只在出现新 bar 时才重算；正在跑就跳过，别排队
         const latest = data?.asOf
         const stale = result?.code !== code || result?.scale !== scale
@@ -600,25 +603,25 @@ export function KitForecastPanel({ ctx }) {
           )}
         </div>
 
-        <div className="kfc-scales">
+        <select
+          className="kfc-select kfc-selectScale"
+          value={scale}
+          title={t('scaleHint')}
+          onChange={(event) => {
+            // 换了周期，旧图就属于另一个尺度了：有选中的股票就直接重算，
+            // 否则只记下周期，等用户点「开始预测」
+            const next = event.target.value
+            setScale(next)
+            const code = selected?.code ?? result?.code
+            if (code) run({ code, scale: next })
+          }}
+        >
           {scales.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`kfc-scale ${scale === item.key ? 'active' : ''}`}
-              title={`${item.label} · 历史 ${item.Lc} 根 / 预测 ${item.Lh} 根`}
-              onClick={() => {
-                // 换了周期，旧图就属于另一个尺度了：有选中的股票就直接重算，
-                // 否则只记下周期，等用户点「开始预测」
-                setScale(item.key)
-                const code = selected?.code ?? result?.code
-                if (code) run({ code, scale: item.key })
-              }}
-            >
-              {item.key}
-            </button>
+            <option key={item.key} value={item.key}>
+              {`${item.key} · ${item.label}（${item.Lc}/${item.Lh}）`}
+            </option>
           ))}
-        </div>
+        </select>
 
         <select
           className="kfc-select"
@@ -819,6 +822,7 @@ export function KitForecastPanel({ ctx }) {
               height={340}
               overlays={comparePast ? overlays : null}
               livePrice={Number.isFinite(quote?.price) ? quote.price : null}
+              liveCandle={liveCandle}
             />
             {comparePast && overlays && overlays.some((item) => item.verify) ? (
               <div className="kfc-compare">

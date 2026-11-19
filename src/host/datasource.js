@@ -385,7 +385,12 @@ export class MarketData {
     }
 
     const { bars: completed, dropped } = dropFormingBar(bars, scale, new Date())
-    const value = { code: norm.code, symbol: norm.symbol, scale, bars: completed, source, adjustmentApplied, droppedForming: dropped }
+    // 正在形成的那根（尚未收盘）单独留着：tick 会把它画成动态蜡烛
+    const forming = dropped ? bars[bars.length - 1] : null
+    const value = {
+      code: norm.code, symbol: norm.symbol, scale,
+      bars: completed, forming, source, adjustmentApplied, droppedForming: dropped,
+    }
     this.barsCache.set(cacheKey, { at: Date.now(), value })
     return value
   }

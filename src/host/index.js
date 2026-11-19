@@ -478,6 +478,8 @@ function createServer(ctx, config, paths, overrides = {}) {
       asOf: data?.bars?.at(-1)?.t ?? null,
       bars: data?.bars?.length ?? null,
       droppedForming: data?.droppedForming ?? null,
+      // 未收盘的那根：前端画成动态蜡烛，盘中能直接看到它长出来
+      forming: data?.forming ?? null,
       source: data?.source ?? null,
       quote,
       quoteError: quoteResult.status === 'rejected' ? errorText(quoteResult.reason) : null,

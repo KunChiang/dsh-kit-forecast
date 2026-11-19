@@ -35,7 +35,7 @@ function fmtTime(label) {
   return time === '15:00' && label.length > 10 ? date : `${date} ${time}`
 }
 
-export function ForecastChart({ data, height = 320, overlays = null, livePrice = null }) {
+export function ForecastChart({ data, height = 320, overlays = null, livePrice = null, liveCandle = null }) {
   const canvasRef = React.useRef(null)
   const wrapRef = React.useRef(null)
   const [hover, setHover] = React.useState(null)
@@ -92,6 +92,11 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       }
     }
     if (Number.isFinite(livePrice)) { lows.push(livePrice); highs.push(livePrice) }
+    if (liveCandle) {
+      for (const key of ['o', 'h', 'l', 'c']) {
+        if (Number.isFinite(liveCandle[key])) { lows.push(liveCandle[key]); highs.push(liveCandle[key]) }
+      }
+    }
     let min = Math.min(...lows)
     let max = Math.max(...highs)
     if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
@@ -183,6 +188,36 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       ctx.setLineDash([])
     }
 
+    // ---- 未收盘的那根 K 线 ----------------------------------------------
+    // 画在最后一根已收盘蜡烛右侧半格，半透明 + 虚线描边，和「已确认」区分开
+    if (liveCandle && Number.isFinite(liveCandle.c)) {
+      const x = xOf(nHist - 1) + step * 0.5
+      const up = liveCandle.c >= liveCandle.o
+      const color = up ? UP : DOWN
+      ctx.save()
+      ctx.globalAlpha = 0.5
+      ctx.strokeStyle = color
+      ctx.fillStyle = color
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(x, yOf(liveCandle.h))
+      ctx.lineTo(x, yOf(liveCandle.l))
+      ctx.stroke()
+      const top = yOf(Math.max(liveCandle.o, liveCandle.c))
+      const bottom = yOf(Math.min(liveCandle.o, liveCandle.c))
+      const w = Math.max(2, candleW * 0.7)
+      ctx.fillRect(x - w / 2, top, w, Math.max(1, bottom - top))
+      ctx.restore()
+      ctx.save()
+      ctx.setLineDash([2, 2])
+      ctx.strokeStyle = 'rgba(127,127,127,0.35)'
+      ctx.beginPath()
+      ctx.moveTo(x, padTop)
+      ctx.lineTo(x, padTop + plotH)
+      ctx.stroke()
+      ctx.restore()
+    }
+
     // ---- 现价线 ----------------------------------------------------------
     // 盘中最后成交价，把「现在在哪」和预测区间放在一起看
     if (Number.isFinite(livePrice)) {
@@ -215,14 +250,18 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
           .filter((point) => point.x !== undefined)
         if (pts.length === 0) return
 
-        // q05–q95 底色
-        const band = pts.filter((point) => Number.isFinite(point.q05) && Number.isFinite(point.q95))
+        // q05–q95 底色：只给最近的一条、且已实现比例够高时才画。
+        // 1m 这种长窗口里，刚做的预测几乎全是未实现部分，铺满底色只会变成噪音。
+        const realizedRatio = overlay.verify ? overlay.verify.realizedBars / overlay.verify.totalBars : 0
+        const band = oi === 0 && realizedRatio >= 0.25
+          ? pts.filter((point) => Number.isFinite(point.q05) && Number.isFinite(point.q95))
+          : []
         if (band.length > 1) {
           ctx.beginPath()
           band.forEach((point, i) => (i === 0 ? ctx.moveTo(xOf(point.x), yOf(point.q95)) : ctx.lineTo(xOf(point.x), yOf(point.q95))))
           for (let i = band.length - 1; i >= 0; i -= 1) ctx.lineTo(xOf(band[i].x), yOf(band[i].q05))
           ctx.closePath()
-          ctx.fillStyle = `rgba(240,164,74,${0.07 * (1 - oi * 0.3)})`
+          ctx.fillStyle = `rgba(240,164,74,${0.06 * (1 - oi * 0.3)})`
           ctx.fill()
         }
 
@@ -314,7 +353,8 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       }
       canvas.dataset.index = String(index)
     }
-  }, [data, height, hover, hoverPos, overlays])
+    // 注意：livePrice / overlays 都必须进依赖，否则闭包里永远是旧值、画布不重绘
+  }, [data, height, hover, hoverPos, overlays, livePrice, liveCandle])
 
   React.useEffect(() => {
     draw()

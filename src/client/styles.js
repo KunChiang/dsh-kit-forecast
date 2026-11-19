@@ -194,6 +194,7 @@ export const STYLES = `
   background: var(--dsw-alias-brand-primary);
   color: #fff;
 }
+.kfc-selectScale { min-width: 168px; font-variant-numeric: tabular-nums; }
 .kfc-select {
   padding: 6px 8px;
   border-radius: 8px;

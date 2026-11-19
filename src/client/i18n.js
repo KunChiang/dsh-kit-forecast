@@ -21,6 +21,7 @@ export const zh = {
   setupFailed: '初始化失败',
 
   qualityHint: '采样路径数与扩散步数的档位：越精细越慢',
+  scaleHint: 'K 线周期（括号里是「历史根数 / 预测根数」）',
   'quality.fast': '快速',
   'quality.standard': '标准',
   'quality.fine': '精细',
@@ -114,6 +115,7 @@ export const en = {
   setupFailed: 'Setup failed',
 
   qualityHint: 'Sampling budget: more paths / steps = slower but better',
+  scaleHint: 'Bar interval (parentheses: history bars / forecast bars)',
   'quality.fast': 'Fast',
   'quality.standard': 'Standard',
   'quality.fine': 'Fine',

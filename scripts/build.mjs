@@ -70,7 +70,7 @@ ${body}
 `
 writeFileSync(join(libDir, 'client.js'), wrapped, 'utf8')
 
-for (const file of ['index.js', 'datasource.js', 'engine.js']) {
+for (const file of ['index.js', 'datasource.js', 'engine.js', 'state.js']) {
   copyFileSync(join(root, 'src', 'host', file), join(libDir, file))
 }
 

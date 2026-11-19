@@ -131,8 +131,18 @@ const server = createServer(async (req, res) => {
     try {
       const response = await routes.get(req.url)(request)
       res.writeHead(response.status, Object.fromEntries(response.headers))
-      const text = await response.text()
-      res.end(text)
+      // 必须边读边转：SSE 一旦被 await text() 缓冲，浏览器就看不到中间进度
+      const reader = response.body?.getReader()
+      if (reader) {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          res.write(Buffer.from(value))
+        }
+        res.end()
+      } else {
+        res.end(await response.text())
+      }
     } catch (error) {
       res.writeHead(500, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ ok: false, error: { message: String(error) } }))
@@ -149,6 +159,12 @@ const server = createServer(async (req, res) => {
 })
 await new Promise((r) => server.listen(port, '127.0.0.1', r))
 console.log(`preview server on http://127.0.0.1:${port}`)
+
+// --serve：只起服务，不截图（方便手工/脚本从外部驱动交互测试）
+if (process.argv.includes('--serve')) {
+  console.log('serving; press Ctrl+C to stop')
+  await new Promise(() => {})
+}
 
 const script = join(root, '.preview', 'shot.py')
 writeFileSync(script, `

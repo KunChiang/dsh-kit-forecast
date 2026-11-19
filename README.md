@@ -5,11 +5,14 @@
 
 - 模型：[Luciferbobo/KiT](https://github.com/Luciferbobo/KiT)（KiT-L 284M，arXiv:2609.34507），本地推理，不上传你的查询
 - 数据：新浪 + 腾讯的实时行情与前复权 K 线，**7 个周期**（1m / 5m / 15m / 30m / 1h / 2h / 日线）
-- 形态：侧栏常驻面板，Canvas 画历史 K 线 + 预测分位带 + 中位路径，可开"实时跟随"定时重跑
+- 形态：侧栏常驻面板，Canvas 画历史 K 线 + 预测分位带 + 中位路径
+- 记忆：股票、周期、参数、上次的预测结果都会留存，关掉面板再打开原样恢复；用过的股票自动进「常用」
 
 > 仅用于研究与学习，不构成任何投资建议。
 
 ![KiT 走势预测面板](preview/panel-dark-result.png)
+
+_（截图里「常用」两只是预测过的股票，右侧「跟随中」表示正在盯最新收盘 K 线）_
 
 ## 怎么用
 
@@ -18,7 +21,23 @@
    本机已经预置好，按钮显示「环境就绪」，可以直接预测。
 3. 搜索框输入代码或名称（`600519`、`贵州茅台`、`sh601318`、`300750.SZ` 都行），从联想里选一只。
 4. 选周期（`1d` 最快，`1m` 最慢也最细），点「开始预测」。
-5. 想让它跟着盘面自己刷新，勾上「实时跟随」（交易时段每分钟重跑一次）。
+5. 想让它跟着盘面自己刷新，勾上「实时跟随」：它盯着**最后一根已收盘 K 线**，只有出现新 bar 才重算。
+
+### 记忆与「常用」
+
+| 行为 | 说明 |
+| --- | --- |
+| 自动记住 | 预测过的股票进入「常用」列表，最近用过的排前面 |
+| 手动置顶 | 工具栏的 ☆ 把当前股票固定到最前 |
+| 记住周期 | 每只股票记住自己上次看的周期，切回来不用重选 |
+| 关掉再开 | 面板重新打开时直接回到上次的股票、周期和预测图，不用重新跑 |
+| 存在哪 | `…/kit-forecast/state.json`（Host 侧），换窗口也能读到；只存 60 根历史和图表数据 |
+
+### 刷新时不会闪
+
+「实时跟随」和手动「重新预测」都是**非破坏式**的：旧图一直留在屏幕上，
+右上角显示细进度和「刷新中 N/M」，新结果算完才替换；失败也只在顶部出一条提示，旧图继续可用。
+只有换股票、换周期这种「目标变了」的情况才会清空旧图。
 
 ### 面板读法
 
@@ -127,6 +146,8 @@ dsh plugin --profile desktop add /abs/path/to/dsh-kit-forecast
 | `POST /bars` | 指定周期的历史 K 线（不跑模型，画图用） |
 | `POST /forecast` | SSE：`stage` → `progress` → `result`，最后 `done` |
 | `POST /setup` | SSE：初始化环境（建 venv / 装依赖 / 下载权重），逐行回显日志 |
+| `POST /state` | 读取/合并写入面板状态（常用股票、上次预测、偏好） |
+| `POST /tick` | 轻量心跳：最后一根已收盘 bar + 盘口，用于判断要不要重算 |
 
 ## 目录结构
 
@@ -134,6 +155,7 @@ dsh plugin --profile desktop add /abs/path/to/dsh-kit-forecast
 src/host/index.js       路由、SSE、初始化流程、涨跌停规则
 src/host/datasource.js  行情抓取、复权、周期聚合、已收盘 bar 过滤
 src/host/engine.js      Python worker 生命周期与 JSON Lines 调度
+src/host/state.js       面板状态持久化（state.json，原子写入 + 损坏回落）
 src/client/             面板、Canvas 图表、样式、文案
 runtime/engine.py       推理 worker（构造窗口 → 采样 → 反归一化 → 汇总）
 runtime/kit_v1/         KiT 官方模型代码（AGPL-3.0，原样引入，见 runtime/KIT_LICENSE）
@@ -146,9 +168,10 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 - **和官方参考对齐**：用官方 demo 数据（`300591.SZ` 5m，anchor 2026-01-23）跑同一套窗口构造与采样，
   得到的末端收益中位数 −4.8%（官方发布结果 −5.6%，差异来自随机种子），随后 96 根真实 bar 的实际值 −5.8%，
   说明特征、规范化、日历特征与采样器与论文实现一致。
-- **测试覆盖**（`npm test`，17 项，约 8 秒）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
+- **测试覆盖**（`npm test`，29 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
   `/forecast` 的 SSE 事件顺序、种子可复现性、涨跌停幅度推断、K 线不足与非法输入的报错路径；
-  最后一项会用真实权重跑两次预测，断言两条结果逐位相同。
+  状态文件读写/合并/损坏回落、常用股票排序与上限、相对时间格式化；`/state` 与 `/tick` 的路由契约。
+  其中一项会用真实权重跑两次预测，断言两条结果逐位相同。
 
 ## 已知限制
 
@@ -162,12 +185,12 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.0.7`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.1.0`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |
 | 推理设备 | Apple M4 / `mps`，fp32；首次加载权重约 4–5 秒 |
-| 自检 | `npm test` 17 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
+| 自检 | `npm test` 29 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
 
 浏览器半是随插件加载的模块，需要 **重启一次 Harness**（或重开桌面窗口）让它进入新的模块代，
 侧栏才会出现「KiT 走势预测」；Host 半的路由已经随安装即时生效。

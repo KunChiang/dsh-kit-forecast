@@ -25,9 +25,27 @@ export const zh = {
   'quality.standard': '标准',
   'quality.fine': '精细',
   auto: '实时跟随',
-  autoHint: '在交易时段内按固定间隔自动重新预测',
+  autoHint: '盯着最后一根已收盘 K 线：只有出现新 bar 才重算，刷新时旧图保留不闪',
+  watching: '跟随中',
+  watchHint: '正在轮询最新收盘 K 线；有新 bar 时自动重算',
+  watchFail: '上一次心跳失败，会自动重试',
+  watchRetry: '跟随重试中',
   limit: '涨跌停约束',
   limitHint: '把预测路径投影到当日涨跌停区间内',
+
+  watchlist: '常用',
+  pinHint: '把当前股票加入常用（置顶）',
+  unpinHint: '取消置顶',
+  removeHint: '从常用里移除',
+  pinnedNotice: '已加入常用',
+  unpinnedNotice: '已取消置顶',
+
+  restoring: '正在恢复上次的股票与预测…',
+  updating: '刷新中',
+  updated: '更新于',
+  needStock: '请先输入股票代码或名称，并从联想列表里选一只股票',
+  needSetup: '运行环境还没准备好，请先完成初始化',
+  preparing: '准备中…',
 
   run: '开始预测',
   rerun: '重新预测',
@@ -53,6 +71,7 @@ export const zh = {
 
   emptyTitle: '输入代码，看未来怎么走',
   emptyBody: '支持任意 A 股（沪深京），1 分钟到日线共 7 个周期。模型输出多条采样路径的分布，用来判断方向、幅度和不确定性。',
+  emptyHint: '用过的股票会自动出现在「常用」里，也可以点 ☆ 固定置顶；下次打开面板会直接回到上次的股票与结果。',
 
   footNote:
     '数据：新浪 / 腾讯行情（实时盘口 + 前复权 K 线）；模型：KiT-284M（AGPL-3.0，Luciferbobo/KiT）。'
@@ -85,9 +104,27 @@ export const en = {
   'quality.standard': 'Standard',
   'quality.fine': 'Fine',
   auto: 'Auto',
-  autoHint: 'Re-run on a fixed interval during trading hours',
+  autoHint: 'Watches the last closed bar and only recomputes when a new one appears; the old chart never blinks',
+  watching: 'Following',
+  watchHint: 'Polling the latest closed bar; recomputes when a new bar closes',
+  watchFail: 'Last heartbeat failed; will retry automatically',
+  watchRetry: 'Retrying',
   limit: 'Price-limit clamp',
   limitHint: 'Project sampled paths into the daily price-limit band',
+
+  watchlist: 'Watchlist',
+  pinHint: 'Pin this stock to the watchlist',
+  unpinHint: 'Unpin',
+  removeHint: 'Remove from watchlist',
+  pinnedNotice: 'Pinned to watchlist',
+  unpinnedNotice: 'Unpinned',
+
+  restoring: 'Restoring your last stock and forecast…',
+  updating: 'Updating',
+  updated: 'Updated',
+  needStock: 'Pick a stock from the search suggestions first',
+  needSetup: 'Runtime is not ready yet; finish setup first',
+  preparing: 'Preparing…',
 
   run: 'Forecast',
   rerun: 'Forecast again',
@@ -113,6 +150,7 @@ export const en = {
 
   emptyTitle: 'Type a ticker to see the path distribution',
   emptyBody: 'Any A-share (SSE/SZSE/BSE), seven horizons from 1m to 1d. The model returns a distribution over future bars.',
+  emptyHint: 'Stocks you use land in the watchlist automatically; pin favourites with ☆. Reopening the panel restores your last stock and result.',
 
   footNote:
     'Data: Sina / Tencent live quotes and adjusted bars. Model: KiT-284M (AGPL-3.0, Luciferbobo/KiT). '

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 import { SCALES, MarketData, normalizeCode } from './datasource.js'
 import { KitEngine } from './engine.js'
+import { createStateStore } from './state.js'
 
 export const name = 'kit-forecast'
 
@@ -302,7 +303,33 @@ function createServer(ctx, config, paths, overrides = {}) {
     timeoutMs: config.timeoutMs,
   })
   const probePython = createPythonProbe()
+  const store = createStateStore(paths.dataDir, logger)
   let setupRunning = false
+
+  async function handleState(request) {
+    const body = await request.json().catch(() => ({}))
+    // 传了内容就是写入（合并式），空 body 就是读取
+    const hasPatch = Object.keys(body ?? {}).length > 0
+    if (hasPatch) {
+      const next = store.patch({
+        ...(Array.isArray(body.watchlist) ? { watchlist: body.watchlist } : {}),
+        ...('last' in body ? { last: body.last } : {}),
+        ...(body.prefs && typeof body.prefs === 'object' ? { prefs: body.prefs } : {}),
+        ...(body.notes && typeof body.notes === 'object' ? { notes: body.notes } : {}),
+      })
+      return noStoreJson({ ok: true, state: next })
+    }
+    return noStoreJson({ ok: true, state: store.read() })
+  }
+
+  /** 把一次预测结果记进 watchlist 与 last，供下次打开面板秒恢复。 */
+  function rememberResult(result, prefs) {
+    try {
+      store.remember(result, prefs)
+    } catch (error) {
+      logger.warn?.(`[kit-forecast] 记录预测状态失败：${errorText(error)}`)
+    }
+  }
 
   async function handleStatus() {
     const python = await probePython(paths.python)
@@ -343,6 +370,32 @@ function createServer(ctx, config, paths, overrides = {}) {
     if (!code) return failure('kit-forecast/quote', '缺少股票代码')
     const quote = await market.quote(code)
     return noStoreJson({ ok: true, quote })
+  }
+
+  /**
+   * 轻量「心跳」：只回答「最后一根已收盘 K 线是哪根」+ 当前盘口。
+   * 前端拿它判断要不要重算，避免定时器无条件重跑一次 20~80 秒的采样。
+   */
+  async function handleTick(request) {
+    const body = await request.json().catch(() => ({}))
+    const code = asString(body.code)
+    const scale = asString(body.scale) ?? '1d'
+    if (!code) return failure('kit-forecast/tick', '缺少股票代码')
+    if (!SCALES[scale]) return failure('kit-forecast/tick', `不支持的周期：${scale}`)
+    const [data, quote] = await Promise.all([
+      market.bars(code, scale),
+      market.quote(code).catch(() => null),
+    ])
+    return noStoreJson({
+      ok: true,
+      code: data.code,
+      scale,
+      asOf: data.bars.at(-1)?.t ?? null,
+      bars: data.bars.length,
+      droppedForming: data.droppedForming,
+      source: data.source,
+      quote,
+    })
   }
 
   async function handleBars(request) {
@@ -511,23 +564,22 @@ function createServer(ctx, config, paths, overrides = {}) {
           }
         })
 
-        send({
-          t: 'result',
-          data: {
-            ...result,
-            name: quote?.name ?? norm.digits,
-            code: norm.code,
-            scale,
-            quote,
-            seed: effectiveSeed,
-            source: data.source,
-            adjustmentApplied: data.adjustmentApplied,
-            droppedForming: data.droppedForming,
-            barsAvailable: data.bars.length,
-            elapsedMs: Date.now() - started,
-            generatedAt: new Date().toISOString(),
-          },
-        })
+        const payload = {
+          ...result,
+          name: quote?.name ?? norm.digits,
+          code: norm.code,
+          scale,
+          quote,
+          seed: effectiveSeed,
+          source: data.source,
+          adjustmentApplied: data.adjustmentApplied,
+          droppedForming: data.droppedForming,
+          barsAvailable: data.bars.length,
+          elapsedMs: Date.now() - started,
+          generatedAt: new Date().toISOString(),
+        }
+        rememberResult(payload, { scale, quality: body.quality, applyLimit, autoRefresh: body.autoRefresh })
+        send({ t: 'result', data: payload })
       } finally {
         // 兜底：确保 done 一定发出
       }
@@ -540,7 +592,10 @@ function createServer(ctx, config, paths, overrides = {}) {
     return noStoreJson({ ok: true, status })
   }
 
-  return { handleStatus, handleSearch, handleQuote, handleBars, handleSetup, handleForecast, handleWarm, engine }
+  return {
+    handleStatus, handleSearch, handleQuote, handleBars, handleSetup,
+    handleForecast, handleWarm, handleState, handleTick, store, engine,
+  }
 }
 
 /** 找一个能跑脚本的 node：优先 PATH 里的 node，其次桌面版附带的 .desktop-bin/node。 */
@@ -646,5 +701,7 @@ export function apply(ctx, rawConfig) {
     route('/forecast', server.handleForecast)
     route('/setup', server.handleSetup)
     route('/warm', server.handleWarm)
+    route('/state', server.handleState)
+    route('/tick', server.handleTick)
   })
 }

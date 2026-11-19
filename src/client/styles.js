@@ -374,4 +374,183 @@ export const STYLES = `
   .kfc-sub { display: none; }
   .kfc-stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 }
+
+/* 加载态 --------------------------------------------------------------- */
+.kfc-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 常用股票 chips -------------------------------------------------------- */
+.kfc-chips {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 20px 10px;
+  flex-wrap: wrap;
+}
+.kfc-chipsLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  letter-spacing: .04em;
+  margin-right: 2px;
+}
+.kfc-chipItem {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+  max-width: 230px;
+}
+.kfc-chipItem.active {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);
+}
+.kfc-chipMain {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 9px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  min-width: 0;
+}
+.kfc-chipMain b {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kfc-chipMain span {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+}
+.kfc-chipMain svg { flex: none; color: var(--dsw-alias-label-secondary); }
+.kfc-chipItem.active .kfc-chipMain svg { color: var(--dsw-alias-brand-primary); }
+.kfc-chipItem:hover { background: var(--dsw-alias-bg-layer-2); }
+.kfc-chipDrop {
+  padding: 0 6px;
+  border: none;
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.kfc-chipDrop:hover { color: var(--dsw-alias-state-error-primary); }
+
+/* 收藏按钮 ------------------------------------------------------------- */
+.kfc-iconBtn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+.kfc-iconBtn:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2); }
+.kfc-iconBtn.on {
+  color: var(--dsw-alias-brand-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);
+}
+.kfc-iconBtn:disabled { opacity: .45; cursor: default; }
+
+/* 刷新中的轻提示 -------------------------------------------------------- */
+.kfc-livePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);
+}
+.kfc-spinner.sm {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+
+/* 结果区：刷新时保留旧图，只加一条细进度 ------------------------------- */
+.kfc-resultPane { position: relative; display: flex; flex-direction: column; gap: 12px; }
+.kfc-resultPane.refreshing { opacity: .96; }
+.kfc-refreshBar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent);
+  z-index: 3;
+}
+.kfc-refreshBar i {
+  display: block;
+  height: 100%;
+  background: var(--dsw-alias-brand-primary);
+  transition: width .3s ease;
+}
+.kfc-statCard.stale .kfc-statValue { opacity: .55; }
+
+/* 非阻断提示条 --------------------------------------------------------- */
+.kfc-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, transparent);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+.kfc-notice span { flex: 1; min-width: 0; }
+
+.kfc-emptyHint {
+  margin-top: 4px;
+  max-width: 460px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  opacity: .8;
+}
+
+/* 跟随中标记 ------------------------------------------------------------ */
+.kfc-chip.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dsw-alias-brand-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 32%, transparent);
+}
+.kfc-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: kfc-pulse 1.6s ease-in-out infinite;
+}
+@keyframes kfc-pulse {
+  0%, 100% { opacity: .35; }
+  50% { opacity: 1; }
+}
 `

@@ -35,6 +35,21 @@ export function warmModel() {
   return postJson('/warm', {})
 }
 
+/** 轻量心跳：最后一根已收盘 K 线 + 盘口，用来判断要不要重算。 */
+export function fetchTick(code, scale) {
+  return postJson('/tick', { code, scale })
+}
+
+/** 读取面板持久化状态（常用股票、上次预测、偏好）。 */
+export function fetchState() {
+  return postJson('/state', {})
+}
+
+/** 合并式写入面板状态；只需传要改的字段。 */
+export function patchState(patch) {
+  return postJson('/state', patch ?? {})
+}
+
 /**
  * 消费一个 SSE 流。
  * @param {string} path

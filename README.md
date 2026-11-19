@@ -162,7 +162,7 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.0.6`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.0.7`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |
@@ -174,5 +174,11 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 ## 许可
 
-KiT 模型与 `runtime/kit_v1` 源码来自 [Luciferbobo/KiT](https://github.com/Luciferbobo/KiT)，以 **AGPL-3.0** 发布；本插件因为引入并链接了该代码，同样以 **AGPL-3.0** 发布（见 `runtime/KIT_LICENSE`）。
-行情数据版权归各数据源（新浪财经、腾讯财经）所有，仅供个人研究使用。
+本插件以 **AGPL-3.0** 发布，全文见 [LICENSE](LICENSE)，第三方组件与「对应源代码」说明见 [NOTICE](NOTICE)。
+
+原因是它引入了 [Luciferbobo/KiT](https://github.com/Luciferbobo/KiT) 的模型代码（`runtime/kit_v1`，AGPL-3.0，上游 LICENSE 副本在 `runtime/KIT_LICENSE`）。
+相应地：**如果你修改后分发本插件，或把它作为网络服务对外提供，需要按 AGPL-3.0 第 13 条向使用者提供对应源代码。**
+
+- 模型权重不随仓库分发，由 `npm run model` 或面板的「初始化」从 [Lucifer744/KiT_model](https://huggingface.co/Lucifer744/KiT_model) 下载，适用上游许可。
+- 行情数据来自新浪财经、腾讯财经的公开接口，版权归各数据源所有；仓库只含读取代码，不含数据。
+- 本项目仅供研究与学习，不构成任何投资建议。

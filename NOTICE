@@ -1,0 +1,41 @@
+dsh-kit-forecast
+Copyright (C) 2026 KunChiang
+
+本程序以 GNU Affero General Public License v3.0 发布，全文见同目录 LICENSE。
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, version 3.
+
+本程序不提供任何担保；详见 LICENSE 中的 “NO WARRANTY” 一节。
+SPDX-License-Identifier: AGPL-3.0-only
+
+--------------------------------------------------------------------------
+第三方代码 / Third-party code
+--------------------------------------------------------------------------
+
+1) KiT —— 模型架构、扩散采样与行情特征工程
+   目录：runtime/kit_v1/（原样引入，未做功能修改）
+        以及 runtime/KIT_LICENSE（上游 LICENSE 副本）
+   来源：https://github.com/Luciferbobo/KiT
+   论文：KiT: A Foundation Model for Candlestick Time-Series Forecasting via
+         Diffusion Transformers, arXiv:2609.34507
+   许可：AGPL-3.0
+   模型权重：https://huggingface.co/Lucifer744/KiT_model
+         （运行时由 scripts/fetch-model.mjs 下载到本地 dataDir，不随本仓库分发）
+
+   本插件因引入并链接上述代码，整体按 AGPL-3.0 发布。若你修改并分发本插件，
+   或把它作为网络服务提供，需按 AGPL-3.0 第 13 条向使用者提供对应源代码。
+
+2) 行情数据
+   数据来自新浪财经、腾讯财经的公开接口，版权归各数据源所有；
+   本仓库不包含也不再分发任何行情数据，仅包含读取这些接口的代码。
+
+--------------------------------------------------------------------------
+对应源代码 / Corresponding source
+--------------------------------------------------------------------------
+
+   仓库：https://github.com/KunChiang/dsh-kit-forecast
+   上游：https://github.com/Luciferbobo/KiT
+
+   运行本插件所需的全部源代码（含 runtime/kit_v1、runtime/engine.py 与前端 bundle
+   的构建脚本）都在上面这个仓库里；模型权重按上游许可从其官方发布页获取。

@@ -77,6 +77,9 @@ class Engine:
         self.stats: Dict[str, float] = {}
         self.instruments: Dict[str, Dict[str, Any]] = {}
         self.load_seconds: Optional[float] = None
+        # 上一次采样得到的归一化路径，用于「增量延续」（SDEdit 式热启动）
+        # key: "code|scale" -> {"asOf": Timestamp, "future": [ts...], "z": np.ndarray[K,Lh,F]}
+        self.last_paths: Dict[str, Dict[str, Any]] = {}
 
     # -- 资源 -------------------------------------------------------------
     def ckpt_path(self) -> Path:
@@ -203,12 +206,36 @@ class Engine:
 
         torch = self.torch
         generator = torch.Generator().manual_seed(seed)
+
+        # 增量延续：若上一轮预测的窗口正好落在这次 anchor 的前一根，
+        # 就把上一次的路径整体左移一格、末尾补噪声，从 t_start 而不是 t=1 开始积分。
+        init = None
+        t_start = 1.0
+        warm_info = None
+        if payload.get("warm") is True:
+            prev = self.last_paths.get(f"{code}|{scale}")
+            cur_future = [pd.Timestamp(t) for t in window["future_timestamps"]]
+            if prev is not None and len(prev["future"]) > 1 and len(cur_future) > 0 \
+                    and cur_future[0] == prev["future"][1]:
+                init = self._shift_paths(prev["z"], n_paths, generator)
+                t_start = float(np.clip(float(payload.get("tStart", 0.4)), 0.05, 0.95))
+                warm_info = {"mode": "incremental", "fromAsOf": str(prev["asOf"]), "tStart": t_start}
+            else:
+                warm_info = {"mode": "fresh", "reason": "上一轮窗口与本轮不连续"}
+
         started = time.time()
         paths = self.sample(
             window["x_ctx"], window["cond"], Lh=Lh, steps=steps, n_paths=n_paths,
             cfg_w=cfg_w, generator=generator, progress=progress,
+            init=init, t_start=t_start,
         )
         sample_seconds = time.time() - started
+        self.last_paths[f"{code}|{scale}"] = {
+            "asOf": pd.Timestamp(window["ctx_timestamps"][-1]),
+            "future": [pd.Timestamp(t) for t in window["future_timestamps"]],
+            # sample() 返回 [B,K,Lh,F]，B 恒为 1，这里只存 [K,Lh,F]
+            "z": (paths.detach().to("cpu").numpy() if hasattr(paths, "detach") else np.asarray(paths))[0],
+        }
 
         progress("post", 0, 1, "反归一化与重建 K 线")
         feats = denormalize_paths(paths, MARKET, scale, self.stats,
@@ -220,11 +247,34 @@ class Engine:
         return self.summarize(
             code=code, scale=scale, pred=pred, window=window, Lc=Lc, Lh=Lh,
             n_paths=n_paths, steps=steps, sample_seconds=sample_seconds,
-            history=df.tail(120), limit_rate=limit_rate,
+            history=df.tail(120), limit_rate=limit_rate, warm=warm_info,
         )
 
+    def _shift_paths(self, prev_z, n_paths: int, generator):
+        """把上一轮 [K,Lh,F] 路径左移一格（丢掉已实现的那根），末尾补噪声。
+
+        新 anchor 到来时，上一轮预测窗口里除最后一根外都已变成真实数据，
+        对应的路径样本可以直接平移作为热启动的起点。
+        """
+        import numpy as np
+
+        torch = self.torch
+        prev = np.asarray(prev_z, dtype=np.float32)
+        if prev.ndim == 4:
+            prev = prev[0]
+        _, Lh, F = prev.shape
+        keep = min(n_paths, prev.shape[0])
+
+        z = torch.empty((n_paths, Lh, F), dtype=torch.float32)
+        z[:keep, :-1] = torch.from_numpy(prev[:keep, 1:].copy())
+        # 新出现的那根 bar 没有历史可平移，用同分布噪声补
+        z[:keep, -1] = torch.randn(keep, F, generator=generator)
+        if n_paths > keep:
+            z[keep:] = torch.randn(n_paths - keep, Lh, F, generator=generator)
+        return z
+
     def sample(self, x_ctx, cond, Lh: int, steps: int, n_paths: int, cfg_w: float,
-               generator, progress=None):
+               generator, progress=None, init=None, t_start: float = 1.0):
         """Rectified-flow 采样（与 kit_v1.infer.sampler.flow_sample 同构，加了进度与分批）。
 
         原文：https://github.com/Luciferbobo/KiT · AGPL-3.0
@@ -270,13 +320,18 @@ class Engine:
                     outs.append(self.model(z_full[s:e], t_vec[s:e], sub, Lh))
             return torch.cat(outs, dim=0).float()
 
-        z_tgt = torch.randn(BK, Lh, F, generator=generator, device="cpu",
-                            dtype=x_ctx_rep.dtype).to(device)
+        if init is not None and init.shape[0] == BK:
+            z_tgt = init.to(device=device, dtype=x_ctx_rep.dtype)
+        else:
+            z_tgt = torch.randn(BK, Lh, F, generator=generator, device="cpu",
+                                dtype=x_ctx_rep.dtype).to(device)
 
         with torch.no_grad():
+            # 积分方向：t 从 t_start 单调降到 0（t_start=1 就是常规的「从纯噪声开始」）
+            origin = float(t_start)
             for i in range(steps):
-                t_cur = 1.0 - i / steps
-                t_next = 1.0 - (i + 1) / steps
+                t_cur = origin * (1.0 - i / steps)
+                t_next = origin * (1.0 - (i + 1) / steps)
                 dt = t_cur - t_next
                 if progress:
                     progress("sample", i, steps, f"采样第 {i + 1}/{steps} 步")
@@ -298,7 +353,7 @@ class Engine:
 
     # -- 汇总 -------------------------------------------------------------
     def summarize(self, code, scale, pred, window, Lc, Lh, n_paths, steps,
-                  sample_seconds, history, limit_rate) -> Dict[str, Any]:
+                  sample_seconds, history, limit_rate, warm=None) -> Dict[str, Any]:
         import numpy as np
         import pandas as pd
 
@@ -361,6 +416,7 @@ class Engine:
             "precision": self.precision,
             "sampleSeconds": round(sample_seconds, 2),
             "limitRate": limit_rate,
+            "warm": warm,
             "history": hist,
             "futureTimestamps": fut_ts,
             "bands": {

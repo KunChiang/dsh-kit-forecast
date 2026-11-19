@@ -291,6 +291,82 @@ function runStreaming(command, args, { cwd, env, onLine, timeoutMs = 1800000 } =
 // 路由
 // ---------------------------------------------------------------------------
 
+
+/**
+ * 把一条历史预测与「后来真实走出来的 K 线」对齐，算出它当时准不准。
+ *
+ * 对齐规则：历史预测的窗口是 asOf 之后的 Lh 根；只取已经收盘的那些 bar
+ * （当前 bars 里 t > asOf 的部分），没走完的部分留空。
+ */
+function buildOverlay(entry, bars) {
+  const index = new Map(bars.map((bar, i) => [bar.t, i]))
+  const anchorIndex = index.get(entry.asOf)
+  if (anchorIndex === undefined) return null
+
+  const points = []
+  for (let i = 0; i < entry.future.length; i += 1) {
+    const t = entry.future[i]
+    const actual = bars[index.get(t)]
+    points.push({
+      t,
+      q05: entry.close.q05?.[i] ?? null,
+      q25: entry.close.q25?.[i] ?? null,
+      q50: entry.close.q50?.[i] ?? null,
+      q75: entry.close.q75?.[i] ?? null,
+      q95: entry.close.q95?.[i] ?? null,
+      actual: actual ? actual.c : null,
+    })
+  }
+
+  const realized = points.filter((point) => point.actual !== null)
+  const anchorClose = bars[anchorIndex].c
+  let verify = null
+  if (realized.length > 0) {
+    const last = realized[realized.length - 1]
+    const predRet = entry.close.q50?.length ? Math.log((entry.close.q50[realized.length - 1] ?? anchorClose) / anchorClose) : 0
+    const actualRet = Math.log(last.actual / anchorClose)
+    const insideBand = last.q05 !== null && last.q95 !== null
+      ? last.actual >= last.q05 && last.actual <= last.q95
+      : null
+    const inInterquartile = last.q25 !== null && last.q75 !== null
+      ? last.actual >= last.q25 && last.actual <= last.q75
+      : null
+    verify = {
+      realizedBars: realized.length,
+      totalBars: entry.future.length,
+      complete: realized.length >= entry.future.length,
+      predRet,
+      actualRet,
+      error: actualRet - predRet,
+      insideBand,
+      inInterquartile,
+      directionHit: Math.sign(predRet) === Math.sign(actualRet),
+    }
+  }
+
+  return {
+    id: `${entry.code}|${entry.scale}|${entry.asOf}`,
+    code: entry.code,
+    scale: entry.scale,
+    asOf: entry.asOf,
+    generatedAt: entry.generatedAt,
+    lastClose: entry.lastClose,
+    nPaths: entry.nPaths,
+    steps: entry.steps,
+    warm: entry.warm ?? null,
+    points,
+    verify,
+  }
+}
+
+/** 取最近若干条历史预测（排除当前这根 anchor，避免和自己比）。 */
+function overlaysFor(store, code, scale, bars, excludeAsOf, limit) {
+  const entries = (store.read().history ?? [])
+    .filter((entry) => entry.code === code && entry.scale === scale && entry.asOf !== excludeAsOf)
+    .slice(-limit)
+  return entries.map((entry) => buildOverlay(entry, bars)).filter(Boolean)
+}
+
 function createServer(ctx, config, paths, overrides = {}) {
   const logger = ctx.logger ?? console
   const market = overrides.market ?? new MarketData({ logger })
@@ -398,6 +474,21 @@ function createServer(ctx, config, paths, overrides = {}) {
     })
   }
 
+  /** 历史预测对比：给前端画「上次怎么说的、实际怎么走的」。 */
+  async function handleHistory(request) {
+    const body = await request.json().catch(() => ({}))
+    const codeInput = asString(body.code)
+    const scale = asString(body.scale) ?? '1d'
+    if (!codeInput) return failure('kit-forecast/history', '缺少股票代码')
+    const norm = normalizeCode(codeInput)
+    if (!norm) return failure('kit-forecast/history', `无法识别的股票代码：${codeInput}`)
+    const limit = asInt(body.limit, 3, 1, 12)
+    const data = await market.bars(norm.code, scale)
+    // 统一用归一化后的代码匹配，避免 600519 / 600519.SH 这类写法对不上
+    const overlays = overlaysFor(store, norm.code, scale, data.bars, asString(body.excludeAsOf), limit)
+    return noStoreJson({ ok: true, overlays })
+  }
+
   async function handleBars(request) {
     const body = await request.json().catch(() => ({}))
     const code = asString(body.code)
@@ -498,8 +589,10 @@ function createServer(ctx, config, paths, overrides = {}) {
     const budget = DEFAULT_BUDGET[scale]
     const nPaths = asInt(body.nPaths, budget.paths, 1, Math.min(MAX_PATHS, config.maxPaths))
     const steps = asInt(body.steps, budget.steps, 1, Math.min(MAX_STEPS, config.maxSteps))
-    // 同一只股票 + 同一周期 + 同一根收盘 bar 默认用同一个种子：
-    // 结果可复现，重复点击不会因为随机噪声让中位数来回跳。
+    // 同一只股票 + 同一周期固定用同一个种子（与 anchor 无关）：
+    //   1) 同一根 bar 重复预测结果完全一致；
+    //   2) 换到下一根 bar 时噪声不变，两条预测可以直接叠起来对比；
+    //   3) 「增量延续」能复用上一次的路径（噪声序列相同才有意义）。
     const seed = body.seed === undefined || body.seed === null
       ? null
       : asInt(body.seed, 0, 0, 2 ** 31 - 1)
@@ -544,18 +637,30 @@ function createServer(ctx, config, paths, overrides = {}) {
         await engine.start()
 
         const limitRate = applyLimit ? limitRateOf(norm, quote) : null
-        const effectiveSeed = seed ?? stableSeed(`${norm.code}|${scale}|${data.bars.at(-1).t}`)
-        send({ t: 'stage', stage: 'sample', message: `开始扩散采样：${nPaths} 条路径 × ${steps} 步` })
+        const effectiveSeed = seed ?? stableSeed(`${norm.code}|${scale}`)
+        // 增量延续时自动把步数砍半：热启动从 tStart 起积分，不需要走满全程。
+        // 实测 1d「8 路径 × 12 步」11.5s → 「8 × 6 步」5.2s，中位数几乎不变。
+        const warm = body.warm === true
+        const effectiveSteps = warm ? Math.max(2, Math.round(steps / 2)) : steps
+        send({
+          t: 'stage',
+          stage: 'sample',
+          message: warm
+            ? `增量延续采样：${nPaths} 条路径 × ${effectiveSteps} 步（复用上一轮路径）`
+            : `开始扩散采样：${nPaths} 条路径 × ${effectiveSteps} 步`,
+        })
 
         const result = await engine.request('predict', {
           code: norm.code,
           scale,
           bars: data.bars,
           nPaths,
-          steps,
+          steps: effectiveSteps,
           seed: effectiveSeed,
           tradingDays,
           limitRate,
+          warm,
+          tStart: body.tStart ?? 0.6,
         }, (event) => {
           if (event.stage === 'sample') {
             send({ t: 'progress', stage: 'sample', step: event.step, total: event.total, message: event.message })
@@ -579,6 +684,8 @@ function createServer(ctx, config, paths, overrides = {}) {
           generatedAt: new Date().toISOString(),
         }
         rememberResult(payload, { scale, quality: body.quality, applyLimit, autoRefresh: body.autoRefresh })
+        // 顺手把历史预测的对比数据带上，前端拿到就能直接画
+        payload.overlays = overlaysFor(store, payload.code, scale, data.bars, payload.asOf, 3)
         send({ t: 'result', data: payload })
       } finally {
         // 兜底：确保 done 一定发出
@@ -594,7 +701,7 @@ function createServer(ctx, config, paths, overrides = {}) {
 
   return {
     handleStatus, handleSearch, handleQuote, handleBars, handleSetup,
-    handleForecast, handleWarm, handleState, handleTick, store, engine,
+    handleForecast, handleWarm, handleState, handleTick, handleHistory, store, engine,
   }
 }
 
@@ -703,5 +810,6 @@ export function apply(ctx, rawConfig) {
     route('/warm', server.handleWarm)
     route('/state', server.handleState)
     route('/tick', server.handleTick)
+    route('/history', server.handleHistory)
   })
 }

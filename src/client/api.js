@@ -40,6 +40,11 @@ export function fetchTick(code, scale) {
   return postJson('/tick', { code, scale })
 }
 
+/** 取历史预测与真实走势的对比数据（不给 asOf 则不过滤当前 anchor）。 */
+export function fetchHistory(code, scale, excludeAsOf, limit = 3) {
+  return postJson('/history', { code, scale, excludeAsOf, limit })
+}
+
 /** 读取面板持久化状态（常用股票、上次预测、偏好）。 */
 export function fetchState() {
   return postJson('/state', {})

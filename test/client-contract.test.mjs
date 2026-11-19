@@ -86,7 +86,7 @@ test('client bundle 注册了正确的 id 与 slot', () => {
   assert.equal(typeof exports.apply, 'function')
 })
 
-test('apply 注册主面板、侧栏入口与输入框按钮', () => {
+test('apply 只注册主面板与侧栏入口（输入框左侧不再挂按钮）', () => {
   const { spec } = loadClient()
   const React = resolveReact()
   const exports = spec.factory((id) => {
@@ -124,7 +124,9 @@ test('apply 注册主面板、侧栏入口与输入框按钮', () => {
   assert.ok(locales[0].dict.en.nav)
 
   const names = registrations.map((r) => r.spec.name)
-  assert.deepEqual([...names], ['main', 'sidebar.panellist', 'conversation.input.left'])
+  // 用户反馈：输入框下方不该出现插件图标，所以不再注册 conversation.input.left
+  assert.deepEqual([...names], ['main', 'sidebar.panellist'])
+  assert.equal(names.includes('conversation.input.left'), false)
   const main = registrations[0].spec
   assert.equal(main.key, 'kit-forecast')
   for (const r of registrations) assert.equal(typeof r.render, 'function')

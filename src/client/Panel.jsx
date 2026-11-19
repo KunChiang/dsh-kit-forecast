@@ -1,5 +1,5 @@
 import React from 'react'
-import { fetchState, fetchStatus, fetchTick, patchState, runForecast, runSetup, searchStocks } from './api.js'
+import { fetchHistory, fetchState, fetchStatus, fetchTick, patchState, runForecast, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { NS } from './i18n.js'
 import { relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
@@ -96,6 +96,9 @@ export function KitForecastPanel({ ctx }) {
   const [quality, setQuality] = React.useState('standard')
   const [applyLimit, setApplyLimit] = React.useState(true)
   const [autoRefresh, setAutoRefresh] = React.useState(true)
+  const [comparePast, setComparePast] = React.useState(true)   // 图上叠加历史预测
+  const [incremental, setIncremental] = React.useState(false)  // 增量延续（热启动）
+  const [overlays, setOverlays] = React.useState(null)
   const [watchlist, setWatchlist] = React.useState([])
   const [notes, setNotes] = React.useState({})
 
@@ -163,6 +166,8 @@ export function KitForecastPanel({ ctx }) {
         if (QUALITY.some((item) => item.key === prefs.quality)) setQuality(prefs.quality)
         if (typeof prefs.applyLimit === 'boolean') setApplyLimit(prefs.applyLimit)
         if (typeof prefs.autoRefresh === 'boolean') setAutoRefresh(prefs.autoRefresh)
+        if (typeof prefs.comparePast === 'boolean') setComparePast(prefs.comparePast)
+        if (typeof prefs.incremental === 'boolean') setIncremental(prefs.incremental)
         const last = state.last
         if (last?.result?.code) {
           setResult(last.result)
@@ -279,7 +284,7 @@ export function KitForecastPanel({ ctx }) {
     let failed = false
     let fresh = null
     try {
-      await runForecast({ code: target, scale: targetScale, nPaths, steps, applyLimit, quality }, {
+      await runForecast({ code: target, scale: targetScale, nPaths, steps, applyLimit, quality, warm: incremental }, {
         signal: controller.signal,
         onEvent: (event) => {
           if (event.t === 'stage') {
@@ -292,6 +297,7 @@ export function KitForecastPanel({ ctx }) {
           } else if (event.t === 'result') {
             fresh = event.data
             setResult(event.data)
+            setOverlays(Array.isArray(event.data.overlays) ? event.data.overlays : [])
             setResultAt(Date.now())
             setStage('')
           } else if (event.t === 'fail') {
@@ -344,6 +350,21 @@ export function KitForecastPanel({ ctx }) {
   const runRef = React.useRef(run)
   runRef.current = run
 
+  // 对比开关打开、但当前结果里没有对比数据时（例如刚从 state.json 恢复），补拉一次
+  React.useEffect(() => {
+    if (!comparePast || !result?.code) return undefined
+    if (Array.isArray(overlays) && overlays.length > 0) return undefined
+    let cancelled = false
+    fetchHistory(result.code, result.scale, result.asOf)
+      .then((data) => {
+        if (!cancelled) setOverlays(Array.isArray(data.overlays) ? data.overlays : [])
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [comparePast, result?.code, result?.scale, result?.asOf, overlays])
+
   /**
    * 实时跟随：轮询「最后一根已收盘 K 线」，只有它变了才重算。
    *
@@ -384,8 +405,8 @@ export function KitForecastPanel({ ctx }) {
   // 周期/参数变化时记住偏好
   React.useEffect(() => {
     if (!hydrated) return
-    persist({ prefs: { scale, quality, applyLimit, autoRefresh } })
-  }, [hydrated, scale, quality, applyLimit, autoRefresh, persist])
+    persist({ prefs: { scale, quality, applyLimit, autoRefresh, comparePast, incremental } })
+  }, [hydrated, scale, quality, applyLimit, autoRefresh, comparePast, incremental, persist])
 
   const pick = (item, { runNow = true } = {}) => {
     // 每只股票记住自己上次看的周期（来自 Host 的 notes），切回来还是那个粒度
@@ -594,6 +615,24 @@ export function KitForecastPanel({ ctx }) {
           {t('limit')}
         </label>
 
+        <label className="kfc-check" title={t('compareHint')}>
+          <input
+            type="checkbox"
+            checked={comparePast}
+            onChange={(event) => setComparePast(event.target.checked)}
+          />
+          {t('compare')}
+        </label>
+
+        <label className={`kfc-check ${incremental ? 'on' : ''}`} title={t('incrementalHint')}>
+          <input
+            type="checkbox"
+            checked={incremental}
+            onChange={(event) => setIncremental(event.target.checked)}
+          />
+          {t('incremental')}
+        </label>
+
         <button
           type="button"
           className="kfc-run"
@@ -723,7 +762,33 @@ export function KitForecastPanel({ ctx }) {
                 <i style={{ width: `${progressPct}%` }} />
               </div>
             )}
-            <ForecastChart data={result} height={340} />
+            <ForecastChart
+              data={result}
+              height={340}
+              overlays={comparePast ? overlays : null}
+            />
+            {comparePast && overlays && overlays.some((item) => item.verify) ? (
+              <div className="kfc-compare">
+                <span className="kfc-compareLabel">{t('compareTitle')}</span>
+                {overlays.filter((item) => item.verify).slice(0, 3).map((item) => {
+                  const v = item.verify
+                  const hit = v.insideBand === true
+                  return (
+                    <span
+                      key={item.id}
+                      className={`kfc-compareItem ${hit ? 'hit' : 'miss'}`}
+                      title={`${t('comparePred')} ${pct(v.predRet)} / ${t('compareActual')} ${pct(v.actualRet)}`}
+                    >
+                      <i>{item.asOf?.slice(5, 10)}</i>
+                      <b>{pct(v.predRet)}</b>
+                      <span>→ {pct(v.actualRet)}</span>
+                      <em>{v.complete ? '' : `${v.realizedBars}/${v.totalBars}`}</em>
+                    </span>
+                  )
+                })}
+                <span className="kfc-compareNote">{t('compareNote')}</span>
+              </div>
+            ) : null}
             <div className="kfc-stats">
               <StatCard
                 label={t('stat.median')}

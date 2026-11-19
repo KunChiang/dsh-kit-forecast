@@ -553,4 +553,53 @@ export const STYLES = `
   0%, 100% { opacity: .35; }
   50% { opacity: 1; }
 }
+
+/* 对比历史 ------------------------------------------------------------- */
+.kfc-check.on { color: var(--dsw-alias-brand-primary); }
+
+.kfc-compare {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 11.5px;
+}
+.kfc-compareLabel {
+  color: var(--dsw-alias-label-secondary);
+  letter-spacing: .03em;
+}
+.kfc-compareItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+  font-variant-numeric: tabular-nums;
+}
+.kfc-compareItem i {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-compareItem b { font-weight: 600; color: #f0a44a; }
+.kfc-compareItem span { color: var(--dsw-alias-label-primary); }
+.kfc-compareItem em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--dsw-alias-label-secondary);
+  opacity: .8;
+}
+.kfc-compareItem.hit { border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 35%, transparent); }
+.kfc-compareItem.miss { border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent); }
+.kfc-compareNote {
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+}
 `

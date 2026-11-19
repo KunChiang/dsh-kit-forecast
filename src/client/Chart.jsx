@@ -15,6 +15,8 @@ const h = React.createElement
 const UP = '#e04a4a'
 const DOWN = '#22a06b'
 const PRED = '#3b82f6'
+const PAST = '#f0a44a'      // 历史预测（对比用）
+const ACTUAL = '#e8e8e8'    // 已实现的真实收盘
 const GRID = 'rgba(127,127,127,0.16)'
 const TEXT = 'rgba(127,127,127,0.95)'
 
@@ -33,7 +35,7 @@ function fmtTime(label) {
   return time === '15:00' && label.length > 10 ? date : `${date} ${time}`
 }
 
-export function ForecastChart({ data, height = 320 }) {
+export function ForecastChart({ data, height = 320, overlays = null }) {
   const canvasRef = React.useRef(null)
   const wrapRef = React.useRef(null)
   const [hover, setHover] = React.useState(null)
@@ -62,6 +64,8 @@ export function ForecastChart({ data, height = 320 }) {
     const hist = history.slice(-nHist)
     const nPred = median.length
     if (nHist === 0 || nPred === 0) return
+    // 时间轴（overlay 对齐、刻度标签都用它）
+    const labels = [...hist.map((b) => b.t), ...median.map((b) => b.t)]
 
     const padLeft = 8
     const padRight = 62
@@ -77,6 +81,16 @@ export function ForecastChart({ data, height = 320 }) {
     // 价格范围
     const lows = [...hist.map((b) => b.l), ...(data.bands?.low?.q05 ?? [])]
     const highs = [...hist.map((b) => b.h), ...(data.bands?.high?.q95 ?? [])]
+    // 历史预测的分位带也要纳入价格范围，否则对比线可能跑到画布外
+    for (const overlay of overlays ?? []) {
+      for (const point of overlay.points ?? []) {
+        for (const key of ['q05', 'q95', 'q50']) {
+          const value = point[key]
+          if (Number.isFinite(value)) { lows.push(value); highs.push(value) }
+        }
+        if (Number.isFinite(point.actual)) { lows.push(point.actual); highs.push(point.actual) }
+      }
+    }
     let min = Math.min(...lows)
     let max = Math.max(...highs)
     if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
@@ -168,6 +182,55 @@ export function ForecastChart({ data, height = 320 }) {
       ctx.setLineDash([])
     }
 
+    // ---- 历史预测对比 ----------------------------------------------------
+    // 每条历史预测：中位收盘虚线 + q05–q95 极淡底色 + 已实现部分的真实收盘点
+    if (overlays && overlays.length > 0) {
+      const timeToIndex = new Map()
+      labels.forEach((t, i) => timeToIndex.set(t, i))
+      overlays.slice(0, 3).forEach((overlay, oi) => {
+        const alpha = 0.85 - oi * 0.22
+        const pts = (overlay.points ?? [])
+          .map((point) => ({ ...point, x: timeToIndex.get(point.t) }))
+          .filter((point) => point.x !== undefined)
+        if (pts.length === 0) return
+
+        // q05–q95 底色
+        const band = pts.filter((point) => Number.isFinite(point.q05) && Number.isFinite(point.q95))
+        if (band.length > 1) {
+          ctx.beginPath()
+          band.forEach((point, i) => (i === 0 ? ctx.moveTo(xOf(point.x), yOf(point.q95)) : ctx.lineTo(xOf(point.x), yOf(point.q95))))
+          for (let i = band.length - 1; i >= 0; i -= 1) ctx.lineTo(xOf(band[i].x), yOf(band[i].q05))
+          ctx.closePath()
+          ctx.fillStyle = `rgba(240,164,74,${0.07 * (1 - oi * 0.3)})`
+          ctx.fill()
+        }
+
+        // 中位预测线
+        ctx.beginPath()
+        ctx.strokeStyle = `rgba(240,164,74,${alpha})`
+        ctx.lineWidth = oi === 0 ? 1.4 : 1
+        ctx.setLineDash(oi === 0 ? [5, 3] : [3, 3])
+        let started = false
+        for (const point of pts) {
+          if (!Number.isFinite(point.q50)) continue
+          const x = xOf(point.x)
+          const y = yOf(point.q50)
+          if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
+        }
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        // 已实现的真实收盘：小圆点，露出跟预测线的差
+        for (const point of pts) {
+          if (!Number.isFinite(point.actual)) continue
+          ctx.beginPath()
+          ctx.arc(xOf(point.x), yOf(point.actual), 1.9, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(232,232,232,${0.55 + 0.3 * (1 - oi * 0.3)})`
+          ctx.fill()
+        }
+      })
+    }
+
     // 分界线
     const divideX = padLeft + nHist * step
     ctx.beginPath()
@@ -200,7 +263,6 @@ export function ForecastChart({ data, height = 320 }) {
     })
 
     // 时间轴
-    const labels = [...hist.map((b) => b.t), ...median.map((b) => b.t)]
     const labelCount = Math.max(2, Math.min(6, Math.floor(plotW / 78)))
     ctx.fillStyle = TEXT
     for (let i = 0; i < labelCount; i += 1) {
@@ -231,7 +293,7 @@ export function ForecastChart({ data, height = 320 }) {
       }
       canvas.dataset.index = String(index)
     }
-  }, [data, height, hover, hoverPos])
+  }, [data, height, hover, hoverPos, overlays])
 
   React.useEffect(() => {
     draw()

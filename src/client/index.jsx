@@ -24,48 +24,10 @@ function installStyles() {
   stylesInstalled = true
 }
 
-let appCtx = null
-
-function openPanel() {
-  try {
-    appCtx?.get('layout')?.selectPanel(PANEL_ID)
-  } catch (error) {
-    console.warn('[kit-forecast] 无法打开面板', error)
-  }
-}
-
-function ComposerButton({ t }) {
-  return (
-    <button
-      type="button"
-      className="kfc-composerBtn"
-      title={t('subtitle')}
-      onClick={openPanel}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '4px 9px',
-        borderRadius: 8,
-        border: '1px solid var(--dsw-alias-border-l1)',
-        background: 'var(--dsw-alias-bg-layer-1)',
-        color: 'var(--dsw-alias-label-secondary)',
-        font: 'inherit',
-        fontSize: 12,
-        cursor: 'pointer',
-      }}
-    >
-      <PanelIcon size={13} />
-      {t('nav')}
-    </button>
-  )
-}
-
 export const name = 'kit-forecast'
 export const inject = ['slots', 'locale']
 
 export function apply(ctx) {
-  appCtx = ctx
   installStyles()
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'kit-forecast: dictionaries')
@@ -84,11 +46,4 @@ export function apply(ctx) {
     locale: NS,
   }, (props) => <PanelIcon size={props.size ?? 18} active={props.active === true} />))
 
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left',
-    id: PANEL_ID,
-    order: 46,
-    label: () => ctx.locale.bind(NS)('nav'),
-    locale: NS,
-  }, ComposerButton))
 }

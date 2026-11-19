@@ -701,4 +701,34 @@ export const STYLES = `
 .kfc-tipRow b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .kfc-tipRow b.up { color: #e04a4a; }
 .kfc-tipRow b.down { color: #22a06b; }
+
+/* 行情预览 / 预测过期 --------------------------------------------------- */
+.kfc-previewBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-previewBar span { flex: 1; min-width: 0; }
+.kfc-previewBar button { flex: none; padding: 5px 14px; }
+
+.kfc-staleBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent);
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+}
+.kfc-staleBar .kfc-dot { color: var(--dsw-alias-brand-primary); background: currentColor; }
+.kfc-staleBar span:nth-child(2) { flex: 1; min-width: 0; }
+.kfc-staleBar button { padding: 3px 10px; }
 `

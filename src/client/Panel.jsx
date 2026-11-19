@@ -1,5 +1,5 @@
 import React from 'react'
-import { fetchHistory, fetchState, fetchStatus, fetchTick, patchState, runForecast, runSetup, searchStocks } from './api.js'
+import { fetchBars, fetchHistory, fetchState, fetchStatus, fetchTick, patchState, runForecast, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { NS } from './i18n.js'
 import { inTradingSession, relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
@@ -95,7 +95,8 @@ export function KitForecastPanel({ ctx }) {
   const [scale, setScale] = React.useState('1m')
   const [quality, setQuality] = React.useState('fine')
   const [applyLimit, setApplyLimit] = React.useState(true)
-  const [autoRefresh, setAutoRefresh] = React.useState(true)
+  // 默认不自动重算：进入面板只显示行情/上次的图，点「开始预测」才跑模型
+  const [autoRefresh, setAutoRefresh] = React.useState(false)
   const [comparePast, setComparePast] = React.useState(true)   // 图上叠加历史预测
   const [incremental, setIncremental] = React.useState(false)  // 增量延续（热启动）
   const [overlays, setOverlays] = React.useState(null)
@@ -131,6 +132,19 @@ export function KitForecastPanel({ ctx }) {
     return () => clearInterval(id)
   }, [])
 
+  // 「只看行情」用的历史 K 线（不跑模型）。进入面板时若没有可用的预测，就只画这个。
+  const [previewBars, setPreviewBars] = React.useState(null)
+  const loadPreview = React.useCallback(async (code, scale) => {
+    try {
+      const data = await fetchBars(code, scale, 400)
+      setPreviewBars({ code: data.code, scale, bars: data.bars ?? [], source: data.source })
+      return data
+    } catch {
+      setPreviewBars(null)
+      return null
+    }
+  }, [])
+
   const refreshStatus = React.useCallback(async () => {
     try {
       const data = await fetchStatus()
@@ -154,12 +168,19 @@ export function KitForecastPanel({ ctx }) {
   React.useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const statusData = await refreshStatus()
+      let statusData = null
       let state = null
       try {
-        state = (await fetchState()).state
-      } catch {
-        state = null
+        statusData = await refreshStatus()
+        try {
+          state = (await fetchState()).state
+        } catch {
+          state = null
+        }
+      } finally {
+        // 无论恢复成功与否都必须落地 hydrated，
+        // 否则任何一次请求异常都会让面板永远停在「正在恢复…」
+        if (!cancelled) setHydrated(true)
       }
       if (cancelled) return
       if (state) {
@@ -182,8 +203,18 @@ export function KitForecastPanel({ ctx }) {
           if (SCALE_ORDER.includes(last.result.scale)) setScale(last.result.scale)
         }
       }
-      setHydrated(true)
       if (!statusData) setPhase((prev) => (prev === 'running' ? prev : 'idle'))
+      // 没有可恢复的预测时，只拉行情画 K 线，不跑模型
+      if (!state?.last?.result?.code && statusData) {
+        const code = (state?.watchlist?.[0]?.code)
+          ?? (state?.prefs?.lastCode)
+        if (code) {
+          const scaleFor = state?.prefs?.scale ?? scale
+          setSelected({ code, name: state?.watchlist?.[0]?.name ?? code })
+          setKeyword(state?.watchlist?.[0]?.name ? `${state.watchlist[0].name} ${code}` : code)
+          loadPreview(code, scaleFor)
+        }
+      }
     })()
     return () => {
       cancelled = true
@@ -300,6 +331,7 @@ export function KitForecastPanel({ ctx }) {
             setStage(event.line)
           } else if (event.t === 'result') {
             fresh = event.data
+            setPreviewBars(null)
             setResult(event.data)
             setOverlays(Array.isArray(event.data.overlays) ? event.data.overlays : [])
             setResultAt(Date.now())
@@ -383,6 +415,8 @@ export function KitForecastPanel({ ctx }) {
   const [liveQuote, setLiveQuote] = React.useState(null)
   // 未收盘那根 K 线：用于图上画一根会长的动态蜡烛
   const [liveCandle, setLiveCandle] = React.useState(null)
+  // 心跳看到的最新已收盘 bar：与 result.asOf 比对，判断上次预测是否已过期
+  const [latestBar, setLatestBar] = React.useState(null)
   const lastRunAnchorRef = React.useRef(null)
 
   /**
@@ -416,11 +450,11 @@ export function KitForecastPanel({ ctx }) {
         setTickState('ok')
         if (data?.quote) setLiveQuote({ ...data.quote, code })
         setLiveCandle(data?.forming ?? null)
-        // B. 只在出现新 bar 时才重算；正在跑就跳过，别排队
+        if (data?.asOf) setLatestBar(data.asOf)
+        // B. 默认不动模型。只有用户显式打开「实时跟随」、且出现新的收盘 bar 时才重算。
         const latest = data?.asOf
-        const stale = result?.code !== code || result?.scale !== scale
-        const newBar = latest && latest !== result?.asOf
-        if (autoRefresh && (newBar || stale) && !runningRef.current && lastRunAnchorRef.current !== latest) {
+        const newBar = latest && result?.asOf && latest !== result.asOf
+        if (autoRefresh && newBar && !runningRef.current && lastRunAnchorRef.current !== latest) {
           lastRunAnchorRef.current = latest
           runRef.current({ silent: true })
         }
@@ -448,7 +482,7 @@ export function KitForecastPanel({ ctx }) {
     persist({ prefs: { scale, quality, applyLimit, autoRefresh, comparePast, incremental } })
   }, [hydrated, scale, quality, applyLimit, autoRefresh, comparePast, incremental, persist])
 
-  const pick = (item, { runNow = true } = {}) => {
+  const pick = (item, { runNow = false } = {}) => {
     // 每只股票记住自己上次看的周期（来自 Host 的 notes），切回来还是那个粒度
     const preferred = item.scale ?? notes[item.code] ?? scale
     const valid = SCALE_ORDER.includes(preferred) ? preferred : scale
@@ -457,6 +491,8 @@ export function KitForecastPanel({ ctx }) {
     setSuggestions([])
     setSearchOpen(false)
     setScale(valid)
+    loadPreview(item.code, valid)
+    // 默认只画行情；只有调用方明确要求时才预测（例如从联想里回车）
     if (runNow) run({ code: item.code, name: item.name, scale: valid })
   }
 
@@ -493,6 +529,34 @@ export function KitForecastPanel({ ctx }) {
     })
   }
 
+  /**
+   * 只有行情、还没预测时的图表数据。
+   * 结构与预测结果一致，但 pathMedian / bands 为空 —— 图表会自动不画预测层。
+   */
+  const previewData = React.useMemo(() => {
+    if (!previewBars || previewBars.bars.length === 0) return null
+    const bars = previewBars.bars.slice(-400)
+    return {
+      code: previewBars.code,
+      scale: previewBars.scale,
+      asOf: bars.at(-1)?.t ?? null,
+      lastClose: bars.at(-1)?.c ?? null,
+      history: bars,
+      pathMedian: [],
+      futureTimestamps: [],
+      bands: {},
+      stats: null,
+      nPaths: 0,
+      steps: 0,
+      Lh: 0,
+      source: previewBars.source,
+    }
+  }, [previewBars])
+
+  // 显示用数据：优先预测结果；没有预测就退回行情预览
+  const chartData = result ?? previewData
+  const isPreview = !result && Boolean(previewData)
+
   const scales = status?.scales?.length
     ? status.scales
     : SCALE_ORDER.map((key) => ({ key, label: key, Lc: 0, Lh: 0 }))
@@ -501,6 +565,7 @@ export function KitForecastPanel({ ctx }) {
   // 优先显示心跳拿到的最新盘口；预测结果里附带的报价只在没有心跳时兜底
   const quote = (liveQuote && (!result || liveQuote.code === result.code) ? liveQuote : result?.quote) ?? null
   const quoteUp = (quote?.changePercent ?? 0) >= 0
+  const stale = Boolean(result?.asOf && latestBar && latestBar !== result.asOf)
   const activeCode = selected?.code ?? result?.code ?? null
   const activeName = selected?.name ?? result?.name ?? ''
   const pinned = Boolean(watchlist.find((entry) => entry.code === activeCode)?.pinned)
@@ -613,7 +678,14 @@ export function KitForecastPanel({ ctx }) {
             const next = event.target.value
             setScale(next)
             const code = selected?.code ?? result?.code
-            if (code) run({ code, scale: next })
+            if (code) {
+              // 旧预测属于上一个周期，比例尺完全不同，必须清掉再退回「只看行情」
+              setResult(null)
+              setOverlays([])
+              setPreviewBars(null)
+              setPhase('idle')
+              loadPreview(code, next)
+            }
           }}
         >
           {scales.map((item) => (
@@ -686,7 +758,7 @@ export function KitForecastPanel({ ctx }) {
           disabled={running}
           onClick={() => run({ silent: Boolean(result) })}
         >
-          {running ? t('running') : result ? t('rerun') : t('run')}
+          {running ? t('running') : result ? t('rerun') : t('runForecast')}
         </button>
       </section>
 
@@ -776,6 +848,18 @@ export function KitForecastPanel({ ctx }) {
       )}
 
       <section className="kfc-main">
+        {stale && !running ? (
+          <div className="kfc-staleBar">
+            <span className="kfc-dot" />
+            <span>
+              {t('staleResult')} {latestBar}
+            </span>
+            <button type="button" className="kfc-ghost" onClick={() => run({ silent: true })}>
+              {t('refreshNow')}
+            </button>
+          </div>
+        ) : null}
+
         {notice ? (
           <div className="kfc-notice">
             <span>{notice}</span>
@@ -810,7 +894,7 @@ export function KitForecastPanel({ ctx }) {
           </div>
         )}
 
-        {result && (
+        {chartData && (
           <div className={`kfc-resultPane ${refreshing ? 'refreshing' : ''}`}>
             {refreshing && (
               <div className="kfc-refreshBar">
@@ -818,13 +902,21 @@ export function KitForecastPanel({ ctx }) {
               </div>
             )}
             <ForecastChart
-              data={result}
+              data={chartData}
               height={340}
               overlays={comparePast ? overlays : null}
               livePrice={Number.isFinite(quote?.price) ? quote.price : null}
               liveCandle={liveCandle}
             />
-            {comparePast && overlays && overlays.some((item) => item.verify) ? (
+            {isPreview ? (
+              <div className="kfc-previewBar">
+                <span>{t('previewOnly')}</span>
+                <button type="button" className="kfc-primary" onClick={() => run()}>
+                  {t('runForecast')}
+                </button>
+              </div>
+            ) : null}
+            {!isPreview && comparePast && overlays && overlays.some((item) => item.verify) ? (
               <div className="kfc-compare">
                 <span className="kfc-compareLabel">{t('compareTitle')}</span>
                 {overlays.filter((item) => item.verify).slice(0, 3).map((item) => {
@@ -846,7 +938,7 @@ export function KitForecastPanel({ ctx }) {
                 <span className="kfc-compareNote">{t('compareNote')}</span>
               </div>
             ) : null}
-            <div className="kfc-stats">
+            {!isPreview ? <div className="kfc-stats">
               <StatCard
                 label={t('stat.median')}
                 value={pct(result.stats.retMedian)}
@@ -879,11 +971,11 @@ export function KitForecastPanel({ ctx }) {
                 hint={`${result.device} · ${result.sampleSeconds}s`}
                 stale={refreshing}
               />
-            </div>
+            </div> : null}
           </div>
         )}
 
-        {!result && !running && !error && (
+        {!chartData && !running && !error && (
           <div className="kfc-empty">
             <PanelIcon size={32} />
             <div className="kfc-emptyTitle">{t('emptyTitle')}</div>

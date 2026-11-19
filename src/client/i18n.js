@@ -63,6 +63,9 @@ export const zh = {
   preparing: '准备中…',
 
   run: '开始预测',
+  runForecast: '预测',
+  previewOnly: '当前只显示行情 K 线，点「预测」才会跑模型（约 20–70 秒）。',
+  staleResult: '行情已更新到',
   rerun: '重新预测',
   running: '预测中…',
   cancel: '取消',
@@ -157,6 +160,9 @@ export const en = {
   preparing: 'Preparing…',
 
   run: 'Forecast',
+  runForecast: 'Predict',
+  previewOnly: 'Showing price bars only. Click Predict to run the model (20–70s).',
+  staleResult: 'Price data advanced to',
   rerun: 'Forecast again',
   running: 'Forecasting…',
   cancel: 'Cancel',

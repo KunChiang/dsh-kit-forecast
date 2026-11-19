@@ -97,7 +97,8 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     const nHist = history.length
     const hist = history
     const nPred = median.length
-    if (nHist === 0 || nPred === 0) return
+    // nPred 可以是 0：那是「只画行情、还没预测」的预览态
+    if (nHist === 0) return
     const labels = [...hist.map((b) => b.t), ...median.map((b) => b.t)]
     const total = nHist + nPred
 
@@ -364,7 +365,7 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     ctx.restore()
 
     // ---- 分界线与轴标签（画在裁剪之外，避免被切）------------------------
-    if (inView(nHist) || inView(nHist - 1)) {
+    if (nPred > 0 && (inView(nHist) || inView(nHist - 1))) {
       const divideX = padLeft + (nHist - viewStart) * step
       if (divideX > padLeft && divideX < padLeft + plotW) {
         ctx.beginPath()

@@ -5,7 +5,7 @@
  *   node scripts/host-selftest.mjs [--data-dir <dir>] [--forecast 600519.SH:1d]
  */
 import { pathToFileURL } from 'node:url'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -59,7 +59,11 @@ ctx.inject = (deps, run) => {
   } : undefined), logger }
   run(scoped)
 }
-mod.apply(ctx, { dataDir: arg('data-dir', defaultDataDir()) })
+mod.// 状态文件一律放临时目录：预览/自检绝不能写用户真实的 watchlist 与历史预测
+apply(ctx, {
+  dataDir: arg('data-dir', defaultDataDir()),
+  statePath: arg('state-path', join(tmpdir(), 'kit-forecast-dev-state.json')),
+})
 console.log('routes:', [...routes.keys()].join(', '))
 
 async function call(path, body = {}, { stream = false } = {}) {

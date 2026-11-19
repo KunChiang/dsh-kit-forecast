@@ -10,7 +10,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -379,7 +379,8 @@ function createServer(ctx, config, paths, overrides = {}) {
     timeoutMs: config.timeoutMs,
   })
   const probePython = createPythonProbe()
-  const store = createStateStore(paths.dataDir, logger)
+  // statePath 可显式指定：开发脚本让它指向临时目录，避免污染用户真实收藏
+  const store = createStateStore(paths.dataDir, logger, config.statePath)
   let setupRunning = false
 
   async function handleState(request) {
@@ -428,6 +429,19 @@ function createServer(ctx, config, paths, overrides = {}) {
         defaultPaths: DEFAULT_BUDGET[key].paths,
         defaultSteps: DEFAULT_BUDGET[key].steps,
       })),
+      store: {
+        file: store.file,
+        exists: existsSync(store.file),
+        bytes: (() => {
+          try {
+            return existsSync(store.file) ? statSync(store.file).size : 0
+          } catch {
+            return 0
+          }
+        })(),
+        watchlist: store.read().watchlist.length,
+        history: (store.read().history ?? []).length,
+      },
       ready: python.ok && ready,
     })
   }
@@ -773,6 +787,7 @@ function normalizeConfig(raw) {
   const config = raw && typeof raw === 'object' ? raw : {}
   return {
     dataDir: asString(config.dataDir),
+    statePath: asString(config.statePath),
     python: asString(config.python),
     indexUrl: asString(config.indexUrl),
     hfHost: asString(config.hfHost),

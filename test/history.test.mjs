@@ -39,7 +39,8 @@ function seedHistory(dataDir, bars, { scale = '1d', code = '600519.SH', anchorIn
   const q50 = future.map((_, i) => anchor.c * Math.pow(1.02, i + 1))
   const band = (k) => future.map((_, i) => anchor.c * Math.pow(1.02, i + 1) * (1 + k * Math.sqrt((i + 1) / Lh)))
   const entry = {
-    code, name: '测试股', scale, asOf: anchor.t, generatedAt: '2026-01-01T00:00:00.000Z',
+    // generatedAt 必须落在 30 天保留期内，否则会被过期策略清掉
+    code, name: '测试股', scale, asOf: anchor.t, generatedAt: new Date().toISOString(),
     lastClose: anchor.c, Lh, nPaths: 8, steps: 6, future,
     close: { q05: band(-0.03), q25: band(-0.015), q50, q75: band(0.015), q95: band(0.03) },
     stats: { retMedian: Math.log(q50.at(-1) / anchor.c), upProb: 0.6, targetMedian: q50.at(-1) },

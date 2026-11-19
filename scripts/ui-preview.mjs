@@ -9,7 +9,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -95,7 +95,11 @@ const ctx = {
     logger,
   }),
 }
-apply(ctx, { dataDir: arg('data-dir', defaultDataDir()) })
+// 状态文件一律放临时目录：预览/自检绝不能写用户真实的 watchlist 与历史预测
+apply(ctx, {
+  dataDir: arg('data-dir', defaultDataDir()),
+  statePath: arg('state-path', join(tmpdir(), 'kit-forecast-dev-state.json')),
+})
 
 const html = `<!doctype html><html lang="zh-CN" data-theme="${theme}"><head><meta charset="utf-8">
 <title>KiT 面板预览</title>

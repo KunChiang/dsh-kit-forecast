@@ -22,6 +22,10 @@ const MAX_WATCHLIST = 24
 const MAX_HISTORY_PER_TARGET = 12
 /** 全局最多保留多少条（防止状态文件无限增长）。 */
 const MAX_HISTORY_TOTAL = 120
+/** 历史预测保留多少天，超过就自动清理。 */
+const MAX_HISTORY_DAYS = 30
+/** 保留一份上一次的完整状态，文件损坏时能回滚。 */
+const BACKUP_SUFFIX = '.bak'
 const STATE_VERSION = 2
 
 function emptyState() {
@@ -44,6 +48,15 @@ function definedOnly(source) {
     if (value !== undefined) out[key] = value
   }
   return out
+}
+
+/** 丢掉超过 MAX_HISTORY_DAYS 天的历史预测（按 generatedAt 判断）。 */
+function pruneByAge(history, now = Date.now()) {
+  const cutoff = now - MAX_HISTORY_DAYS * 24 * 60 * 60 * 1000
+  return (history ?? []).filter((entry) => {
+    const ts = Date.parse(String(entry?.generatedAt ?? ''))
+    return Number.isFinite(ts) ? ts >= cutoff : true
+  })
 }
 
 function isRecord(value) {
@@ -119,8 +132,14 @@ function trimHistoryEntry(result) {
   }
 }
 
-export function createStateStore(dataDir, logger = console) {
-  const file = join(dataDir, 'state.json')
+/**
+ * @param {string} dataDir 运行时目录（默认把 state.json 放这里）
+ * @param {object} [logger]
+ * @param {string} [statePath] 显式指定状态文件路径。开发/测试脚本必须用它指向临时目录，
+ *   否则会把测试数据写进用户的真实收藏里（这个问题曾经真的踩过）。
+ */
+export function createStateStore(dataDir, logger = console, statePath) {
+  const file = statePath ?? join(dataDir, 'state.json')
   let cache = null
   let cachedMtime = 0
   let lastWrite = 0
@@ -140,6 +159,18 @@ export function createStateStore(dataDir, logger = console) {
       cache = normalize(parsed)
       cachedMtime = mtime
     } catch (error) {
+      // 主文件坏了：先试 .bak，再退回空状态
+      const backup = `${file}${BACKUP_SUFFIX}`
+      try {
+        if (existsSync(backup)) {
+          cache = normalize(JSON.parse(readFileSync(backup, 'utf8')))
+          cachedMtime = mtime
+          logger.warn?.(`[kit-forecast] state.json 损坏，已从 .bak 恢复：${error.message}`)
+          return cache
+        }
+      } catch {
+        // 备份也坏了，落到空状态
+      }
       logger.warn?.(`[kit-forecast] state.json 读取失败，按空状态处理：${error.message}`)
       cache = emptyState()
       cachedMtime = 0
@@ -173,8 +204,8 @@ export function createStateStore(dataDir, logger = console) {
     base.prefs = isRecord(raw.prefs) ? raw.prefs : {}
     base.notes = isRecord(raw.notes) ? raw.notes : {}
     if (Array.isArray(raw.history)) {
-      base.history = raw.history
-        .filter((entry) => isRecord(entry) && typeof entry.code === 'string' && Array.isArray(entry.future))
+      base.history = pruneByAge(raw.history
+        .filter((entry) => isRecord(entry) && typeof entry.code === 'string' && Array.isArray(entry.future)))
         .slice(-MAX_HISTORY_TOTAL)
     }
     return base
@@ -185,6 +216,14 @@ export function createStateStore(dataDir, logger = console) {
     cachedMtime = currentMtime()
     try {
       mkdirSync(dirname(file), { recursive: true })
+      // 覆盖前把旧文件留一份 .bak：万一下次解析失败还能回滚
+      if (existsSync(file)) {
+        try {
+          writeFileSync(`${file}${BACKUP_SUFFIX}`, readFileSync(file, 'utf8'))
+        } catch {
+          // 备份失败不影响主流程
+        }
+      }
       const tmp = `${file}.tmp`
       writeFileSync(tmp, JSON.stringify(next), 'utf8')
       renameSync(tmp, file)
@@ -219,7 +258,10 @@ export function createStateStore(dataDir, logger = console) {
       const now = Date.now()
       let watchlist = current.watchlist.filter((item) => item.code !== code)
       if (code) {
-        watchlist = [{ code, name: name ?? String(code), pinned: false, at: now }, ...watchlist]
+        // 保留这只股票原有的置顶状态：之前写死 pinned:false，
+        // 导致「对收藏过的股票跑一次预测，收藏就掉了」。
+        const previous = current.watchlist.find((item) => item.code === code)
+        watchlist = [{ code, name: name ?? previous?.name ?? String(code), pinned: previous?.pinned === true, at: now }, ...watchlist]
         const pinned = watchlist.filter((item) => item.pinned)
         const rest = watchlist.filter((item) => !item.pinned)
         watchlist = [...pinned, ...rest]
@@ -232,7 +274,7 @@ export function createStateStore(dataDir, logger = console) {
       // 历史预测：同一 anchor（同一根收盘 bar）只留最新一条，
       // 否则重复点「重新预测」会把列表刷满同一天的记录。
       const entry = trimHistoryEntry(result)
-      let history = current.history ?? []
+      let history = pruneByAge(current.history ?? [])
       if (entry) {
         const anchor = `${entry.code}|${entry.scale}|${entry.asOf}`
         history = history.filter((item) => `${item.code}|${item.scale}|${item.asOf}` !== anchor)

@@ -119,9 +119,18 @@ export function KitForecastPanel({ ctx }) {
   const runningRef = React.useRef(false)
   const startedRef = React.useRef(0)
   const saveTimerRef = React.useRef(null)
+  // 联想请求的令牌：只接受最后一次输入的结果
+  const searchTokenRef = React.useRef(0)
 
   const running = phase === 'running'
   runningRef.current = running
+
+  // 「这份预测结果是不是当前这一只、这个周期」——多处 effect 与渲染都依赖它，
+  // 必须声明在所有 effect 之前（const 在模块/函数体里是 TDZ，用时未初始化会直接报错）。
+  const resultTarget = selected?.code ?? null
+  const resultMatches = Boolean(
+    result && result.code && (!resultTarget || result.code === resultTarget) && result.scale === scale,
+  )
 
   // 秒级时钟：用于「x 分钟前」「下次刷新」这类轻量显示
   React.useEffect(() => {
@@ -231,20 +240,29 @@ export function KitForecastPanel({ ctx }) {
   }, [running])
 
   // 搜索联想（防抖）
+  // 只有输入框内容仍等于「选中股票的名字+代码」时才不联想；
+  // 之前用 `selected !== null` 判断，预测后 selected 会被重置，导致联想永久失效。
   React.useEffect(() => {
     const text = keyword.trim()
-    if (text === '' || selected !== null) {
+    const selectedText = selected ? `${selected.name ?? ''} ${selected.code}`.trim() : ''
+    if (text === '' || (selectedText !== '' && text === selectedText)) {
       setSuggestions([])
       return undefined
     }
+    // 用递增令牌 + 不受重渲染影响的定时器：
+    // 之前 cleanup 里的 clearTimeout 会被无关的 state 变化（例如预测结果到达）清掉，
+    // 表现为「输完字没有联想结果」。
+    const token = ++searchTokenRef.current
     const id = setTimeout(async () => {
       try {
         const data = await searchStocks(text)
+        if (searchTokenRef.current !== token) return // 已经有更新的输入
         setSuggestions(data.items ?? [])
+        setSearchOpen(true)
       } catch {
-        setSuggestions([])
+        if (searchTokenRef.current === token) setSuggestions([])
       }
-    }, 240)
+    }, 200)
     return () => clearTimeout(id)
   }, [keyword, selected])
 
@@ -386,10 +404,20 @@ export function KitForecastPanel({ ctx }) {
   const runRef = React.useRef(run)
   runRef.current = run
 
-  // 对比开关打开、但当前结果里没有对比数据时（例如刚从 state.json 恢复），补拉一次
+  /**
+   * 对比开关打开、但当前结果里没有对比数据时（例如刚从 state.json 恢复），补拉一次。
+   *
+   * 注意不要把 overlays 放进依赖：请求返回空数组时 setOverlays([]) 会产生新引用，
+   * 再次触发本 effect → 无限请求循环，把主线程拖垮（搜索联想跟着失效）。
+   * 用「已经拉过哪个目标」的 ref 做去重。
+   */
+  const historyFetchRef = React.useRef('')
   React.useEffect(() => {
-    if (!comparePast || !result?.code) return undefined
+    if (!comparePast || !result?.code || !resultMatches) return undefined
+    const target = `${result.code}|${result.scale}|${result.asOf}`
+    if (historyFetchRef.current === target) return undefined
     if (Array.isArray(overlays) && overlays.length > 0) return undefined
+    historyFetchRef.current = target
     let cancelled = false
     fetchHistory(result.code, result.scale, result.asOf)
       .then((data) => {
@@ -399,7 +427,7 @@ export function KitForecastPanel({ ctx }) {
     return () => {
       cancelled = true
     }
-  }, [comparePast, result?.code, result?.scale, result?.asOf, overlays])
+  }, [comparePast, result?.code, result?.scale, result?.asOf, resultMatches, overlays])
 
   /**
    * 实时跟随：轮询「最后一根已收盘 K 线」，只有它变了才重算。
@@ -491,6 +519,15 @@ export function KitForecastPanel({ ctx }) {
     setSuggestions([])
     setSearchOpen(false)
     setScale(valid)
+    // 换了股票：旧预测属于另一只股票，必须清掉，否则图表还停在上一只
+    if (result && (result.code !== item.code || result.scale !== valid)) {
+      setResult(null)
+      setOverlays([])
+      setPhase('idle')
+      setError(null)
+      setNotice('')
+    }
+    setPreviewBars(null)
     loadPreview(item.code, valid)
     // 默认只画行情；只有调用方明确要求时才预测（例如从联想里回车）
     if (runNow) run({ code: item.code, name: item.name, scale: valid })
@@ -553,9 +590,10 @@ export function KitForecastPanel({ ctx }) {
     }
   }, [previewBars])
 
-  // 显示用数据：优先预测结果；没有预测就退回行情预览
-  const chartData = result ?? previewData
-  const isPreview = !result && Boolean(previewData)
+  // 显示用数据：只有结果属于当前目标时才用它，否则退回行情预览。
+  // 之前是 `result ?? previewData`，换股票后旧结果优先级更高，图表就卡住不动了。
+  const chartData = (resultMatches ? result : null) ?? previewData
+  const isPreview = !resultMatches && Boolean(previewData)
 
   const scales = status?.scales?.length
     ? status.scales
@@ -822,13 +860,13 @@ export function KitForecastPanel({ ctx }) {
             </>
           )}
           <div className="kfc-quoteSpacer" />
-          {result && (
+          {chartData && (
             <div className="kfc-quoteMeta">
-              <span>{t('lastBar')} {result.asOf}</span>
-              <span>{t('horizon')} {result.Lh} 根</span>
-              <span className="kfc-chip">{result.source}</span>
-              {result.adjustmentApplied ? <span className="kfc-chip">{t('adj')}</span> : null}
-              {result.nPad > 0 ? <span className="kfc-chip warn">填充 {result.nPad}</span> : null}
+              <span>{t('lastBar')} {chartData.asOf}</span>
+              {chartData.Lh > 0 ? <span>{t('horizon')} {chartData.Lh} 根</span> : null}
+              {chartData.source ? <span className="kfc-chip">{chartData.source}</span> : null}
+              {chartData.adjustmentApplied ? <span className="kfc-chip">{t('adj')}</span> : null}
+              {chartData.nPad > 0 ? <span className="kfc-chip warn">填充 {chartData.nPad}</span> : null}
               {resultAt > 0 ? (
                 <span className="kfc-chip">{t('updated')} {relativeTime(new Date(resultAt).toISOString(), now)}</span>
               ) : null}

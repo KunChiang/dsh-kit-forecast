@@ -16,3 +16,13 @@ prepared/
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 预览脚本的临时产物（只保留 README 引用的那几张）
+preview/panel.png
+preview/panel-*.png
+!preview/panel-dark-result.png
+!preview/panel-live.png
+!preview/panel-compare.png
+!preview/panel-zoom.png
+!preview/panel-day.png
+!preview/panel-preview.png

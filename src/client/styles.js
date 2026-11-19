@@ -309,9 +309,11 @@ export const STYLES = `
 .kfc-chart canvas { display: block; width: 100%; }
 .kfc-tip {
   position: absolute;
-  top: 10px; right: 78px;
+  /* 位置由 JS 跟着鼠标算，这里只兜底 */
+  top: 38px; right: 74px;
   min-width: 116px;
   padding: 7px 9px;
+  z-index: 5;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l1);
   background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 92%, transparent);
@@ -621,4 +623,82 @@ export const STYLES = `
   100% { box-shadow: 0 0 0 0 rgba(110,193,255,0); }
 }
 .kfc-tickAge { opacity: .75; }
+
+/* 图表工具条与缩放 ----------------------------------------------------- */
+.kfc-chart { cursor: crosshair; }
+.kfc-chart.dragging { cursor: grabbing; }
+.kfc-chartTools {
+  position: absolute;
+  top: 8px; right: 74px;
+  z-index: 4;
+  display: flex;
+  gap: 4px;
+}
+.kfc-chartTools button {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 88%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.kfc-chartTools button:hover {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-border-l2);
+}
+.kfc-chartTools button.wide { padding: 0 9px; }
+.kfc-zoomHint {
+  position: absolute;
+  left: 10px;
+  bottom: 24px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 80%, transparent);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+/* 悬停浮层：更清楚的数值面板 ------------------------------------------- */
+.kfc-tip {
+  min-width: 152px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+}
+.kfc-tipHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.kfc-tipKind {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 15px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-tip.kind-pred .kfc-tipKind {
+  color: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent);
+}
+.kfc-tipLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.kfc-tipRow { line-height: 1.7; }
+.kfc-tipRow span { color: var(--dsw-alias-label-secondary); }
+.kfc-tipRow b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.kfc-tipRow b.up { color: #e04a4a; }
+.kfc-tipRow b.down { color: #22a06b; }
 `

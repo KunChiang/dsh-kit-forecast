@@ -1,4 +1,5 @@
 import React from 'react'
+import { indexAtX, normalizeView, panView, tailView, visibleCount, zoomView } from './view.js'
 
 const h = React.createElement
 
@@ -10,6 +11,11 @@ const h = React.createElement
  *   - 浅色带：q05–q95 分位区间
  *   - 虚线：预测收盘中位数
  *   - 蜡烛：中位数路径的单根 OHLC
+ *
+ * 交互：
+ *   - 滚轮缩放（以光标下的那根 bar 为锚点）
+ *   - 拖拽平移 / 悬停看数值
+ *   - 右上角有放大 / 缩小 / 复位 / 跳到预测起点四个按钮
  */
 
 const UP = '#e04a4a'
@@ -22,9 +28,9 @@ const TEXT = 'rgba(127,127,127,0.95)'
 
 function fmtPrice(value) {
   if (!Number.isFinite(value)) return '-'
-  if (Math.abs(value) >= 1000) return value.toFixed(0)
-  if (Math.abs(value) >= 100) return value.toFixed(1)
-  return value.toFixed(2)
+  if (Math.abs(value) >= 1000) return value.toFixed(1)
+  if (Math.abs(value) >= 100) return value.toFixed(2)
+  return value.toFixed(3)
 }
 
 function fmtTime(label) {
@@ -35,11 +41,37 @@ function fmtTime(label) {
   return time === '15:00' && label.length > 10 ? date : `${date} ${time}`
 }
 
+function fmtTimeFull(label) {
+  if (!label) return ''
+  const date = label.slice(5, 10)
+  const time = label.slice(11, 16)
+  return time === '15:00' && label.length > 10 ? date : `${date} ${time}`
+}
+
+function fmtVolume(value) {
+  if (!Number.isFinite(value)) return '-'
+  if (value >= 1e8) return `${(value / 1e8).toFixed(2)}亿`
+  if (value >= 1e4) return `${(value / 1e4).toFixed(1)}万`
+  return value.toFixed(0)
+}
+
 export function ForecastChart({ data, height = 320, overlays = null, livePrice = null, liveCandle = null }) {
   const canvasRef = React.useRef(null)
   const wrapRef = React.useRef(null)
   const [hover, setHover] = React.useState(null)
   const [hoverPos, setHoverPos] = React.useState({ x: 0, y: 0 })
+  const [drag, setDrag] = React.useState(null)
+
+  // 视窗：{ start, count }。count=0 表示「全部显示」（默认）
+  const [view, setView] = React.useState({ start: 0, count: 0 })
+
+  // 绘制时把几何信息记下来，供滚轮/拖拽把像素换算成 bar 下标
+  const geomRef = React.useRef({ step: 1, plotLeft: 0, plotWidth: 0, viewStart: 0, viewCount: 1, total: 1 })
+
+  // 换股票 / 换周期 / 换 anchor 时复位视窗，避免停在上一个标的的缩放位置
+  React.useEffect(() => {
+    setView({ start: 0, count: 0 })
+  }, [data?.code, data?.scale, data?.asOf])
 
   const draw = React.useCallback(() => {
     const canvas = canvasRef.current
@@ -64,29 +96,51 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     const hist = history.slice(-nHist)
     const nPred = median.length
     if (nHist === 0 || nPred === 0) return
-    // 时间轴（overlay 对齐、刻度标签都用它）
     const labels = [...hist.map((b) => b.t), ...median.map((b) => b.t)]
+    const total = nHist + nPred
+
+    // ---- 视窗换算 --------------------------------------------------------
+    const normalized = normalizeView(view, total)
+    const viewCount = normalized.count || total
+    const viewStart = normalized.start
 
     const padLeft = 8
-    const padRight = 62
+    const padRight = 66
     const padTop = 12
     const volH = Math.round(heightPx * 0.16)
     const axisH = 18
     const plotH = heightPx - padTop - volH - axisH - 6
     const plotW = width - padLeft - padRight
-    const total = nHist + nPred
-    const step = plotW / total
-    const candleW = Math.max(1.4, Math.min(9, step * 0.62))
+    const step = plotW / viewCount
+    const candleW = Math.max(1.2, Math.min(9, step * 0.62))
 
-    // 价格范围
-    const lows = [...hist.map((b) => b.l), ...(data.bands?.low?.q05 ?? [])]
-    const highs = [...hist.map((b) => b.h), ...(data.bands?.high?.q95 ?? [])]
-    // 历史预测的分位带也要纳入价格范围，否则对比线可能跑到画布外
+    // 只在视窗内的下标参与绘制
+    const inView = (i) => i >= viewStart - 0.5 && i <= viewStart + viewCount - 0.5
+    const xOf = (index) => padLeft + (index - viewStart + 0.5) * step
+
+    geomRef.current = { step, plotLeft: padLeft, plotWidth: plotW, viewStart, viewCount, total }
+
+    // ---- 价格范围（只按视窗内的数据算，放大后纵向也跟着放大）--------------
+    const lows = []
+    const highs = []
+    hist.forEach((bar, i) => {
+      if (!inView(i)) return
+      lows.push(bar.l)
+      highs.push(bar.h)
+    })
+    for (let i = 0; i < nPred; i += 1) {
+      if (!inView(nHist + i)) continue
+      const lo = data.bands?.low?.q05?.[i]
+      const hi = data.bands?.high?.q95?.[i]
+      if (Number.isFinite(lo)) lows.push(lo)
+      if (Number.isFinite(hi)) highs.push(hi)
+    }
     for (const overlay of overlays ?? []) {
       for (const point of overlay.points ?? []) {
+        const idx = labels.indexOf(point.t)
+        if (idx < 0 || !inView(idx)) continue
         for (const key of ['q05', 'q95', 'q50']) {
-          const value = point[key]
-          if (Number.isFinite(value)) { lows.push(value); highs.push(value) }
+          if (Number.isFinite(point[key])) { lows.push(point[key]); highs.push(point[key]) }
         }
         if (Number.isFinite(point.actual)) { lows.push(point.actual); highs.push(point.actual) }
       }
@@ -107,16 +161,14 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     min -= span * 0.06
     max += span * 0.06
     const yOf = (price) => padTop + ((max - price) / (max - min)) * plotH
-    const xOf = (index) => padLeft + (index + 0.5) * step
 
-    // 网格 + 价格轴
+    // ---- 网格 + 价格轴 ---------------------------------------------------
     ctx.font = '10px ui-sans-serif, -apple-system, "PingFang SC", sans-serif'
     ctx.fillStyle = TEXT
     ctx.strokeStyle = GRID
     ctx.lineWidth = 1
-    const ticks = 4
-    for (let i = 0; i <= ticks; i += 1) {
-      const price = min + ((max - min) * i) / ticks
+    for (let i = 0; i <= 4; i += 1) {
+      const price = min + ((max - min) * i) / 4
       const y = yOf(price)
       ctx.beginPath()
       ctx.moveTo(padLeft, y)
@@ -125,9 +177,17 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       ctx.fillText(fmtPrice(price), padLeft + plotW + 6, y + 3)
     }
 
-    // 预测区间（用 close 分位；区域从上一根历史收盘连起，视觉更连贯）
+    // 以下绘制都裁剪到绘图区内，放大后不会溢出到坐标轴
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(padLeft, padTop, plotW, plotH)
+    ctx.clip()
+
+    // ---- 预测分位带 ------------------------------------------------------
     const basePrice = hist[hist.length - 1].c
-    const bandX = [xOf(nHist - 1), ...median.map((_, i) => xOf(nHist + i))]
+    const bandIndexes = []
+    for (let i = 0; i < nPred; i += 1) bandIndexes.push(nHist + i)
+    const bandX = [xOf(nHist - 1), ...bandIndexes.map((i) => xOf(i))]
     const bandY = (arr) => [yOf(basePrice), ...arr.map((v) => yOf(v))]
 
     const paintBand = (upper, lower, color) => {
@@ -138,13 +198,12 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       ctx.fillStyle = color
       ctx.fill()
     }
-
     if (close) {
       paintBand(close.q95, close.q05, 'rgba(59,130,246,0.13)')
       paintBand(close.q75, close.q25, 'rgba(59,130,246,0.20)')
     }
 
-    // 历史蜡烛
+    // ---- 蜡烛 ------------------------------------------------------------
     const drawCandle = (index, bar, color, alpha = 1) => {
       const x = xOf(index)
       ctx.globalAlpha = alpha
@@ -156,44 +215,45 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       ctx.stroke()
       const top = yOf(Math.max(bar.o, bar.c))
       const bottom = yOf(Math.min(bar.o, bar.c))
-      const hgt = Math.max(1, bottom - top)
-      ctx.fillRect(x - candleW / 2, top, candleW, hgt)
+      ctx.fillRect(x - candleW / 2, top, candleW, Math.max(1, bottom - top))
       ctx.globalAlpha = 1
     }
 
     hist.forEach((bar, i) => {
-      const up = bar.c >= bar.o
-      drawCandle(i, bar, up ? UP : DOWN, 0.45)
+      if (!inView(i)) return
+      drawCandle(i, bar, bar.c >= bar.o ? UP : DOWN, 0.45)
     })
-
-    // 预测蜡烛（中位数路径）
     median.forEach((bar, i) => {
-      const up = bar.c >= bar.o
-      drawCandle(nHist + i, bar, up ? PRED : '#8b5cf6', 0.9)
+      if (!inView(nHist + i)) return
+      drawCandle(nHist + i, bar, bar.c >= bar.o ? PRED : '#8b5cf6', 0.9)
     })
 
-    // 中位收盘虚线
+    // ---- 中位收盘虚线 ----------------------------------------------------
     if (close) {
       ctx.beginPath()
       ctx.strokeStyle = PRED
       ctx.lineWidth = 1.4
       ctx.setLineDash([4, 3])
-      close.q50.forEach((price, i) => {
-        const x = xOf(nHist + i)
-        const y = yOf(price)
-        if (i === 0) ctx.moveTo(xOf(nHist - 1), yOf(basePrice))
-        ctx.lineTo(x, y)
-      })
+      let started = false
+      for (let i = 0; i < nPred; i += 1) {
+        const idx = nHist + i
+        if (!inView(idx)) continue
+        const x = xOf(idx)
+        const y = yOf(close.q50[i])
+        if (!started) {
+          ctx.moveTo(started ? x : xOf(nHist - 1), started ? y : yOf(basePrice))
+          if (!started) ctx.lineTo(x, y)
+          started = true
+        } else ctx.lineTo(x, y)
+      }
       ctx.stroke()
       ctx.setLineDash([])
     }
 
     // ---- 未收盘的那根 K 线 ----------------------------------------------
-    // 画在最后一根已收盘蜡烛右侧半格，半透明 + 虚线描边，和「已确认」区分开
     if (liveCandle && Number.isFinite(liveCandle.c)) {
       const x = xOf(nHist - 1) + step * 0.5
-      const up = liveCandle.c >= liveCandle.o
-      const color = up ? UP : DOWN
+      const color = liveCandle.c >= liveCandle.o ? UP : DOWN
       ctx.save()
       ctx.globalAlpha = 0.5
       ctx.strokeStyle = color
@@ -219,7 +279,6 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     }
 
     // ---- 现价线 ----------------------------------------------------------
-    // 盘中最后成交价，把「现在在哪」和预测区间放在一起看
     if (Number.isFinite(livePrice)) {
       const y = yOf(livePrice)
       if (y >= padTop && y <= padTop + plotH) {
@@ -231,15 +290,10 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
         ctx.lineTo(padLeft + plotW, y)
         ctx.stroke()
         ctx.setLineDash([])
-        ctx.fillStyle = 'rgba(120,200,255,0.95)'
-        ctx.fillRect(padLeft + plotW + 2, y - 8, padRight - 4, 16)
-        ctx.fillStyle = '#0b1220'
-        ctx.fillText(fmtPrice(livePrice), padLeft + plotW + 6, y + 3)
       }
     }
 
     // ---- 历史预测对比 ----------------------------------------------------
-    // 每条历史预测：中位收盘虚线 + q05–q95 极淡底色 + 已实现部分的真实收盘点
     if (overlays && overlays.length > 0) {
       const timeToIndex = new Map()
       labels.forEach((t, i) => timeToIndex.set(t, i))
@@ -247,11 +301,9 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
         const alpha = 0.85 - oi * 0.22
         const pts = (overlay.points ?? [])
           .map((point) => ({ ...point, x: timeToIndex.get(point.t) }))
-          .filter((point) => point.x !== undefined)
+          .filter((point) => point.x !== undefined && inView(point.x))
         if (pts.length === 0) return
 
-        // q05–q95 底色：只给最近的一条、且已实现比例够高时才画。
-        // 1m 这种长窗口里，刚做的预测几乎全是未实现部分，铺满底色只会变成噪音。
         const realizedRatio = overlay.verify ? overlay.verify.realizedBars / overlay.verify.totalBars : 0
         const band = oi === 0 && realizedRatio >= 0.25
           ? pts.filter((point) => Number.isFinite(point.q05) && Number.isFinite(point.q95))
@@ -265,7 +317,6 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
           ctx.fill()
         }
 
-        // 中位预测线
         ctx.beginPath()
         ctx.strokeStyle = `rgba(240,164,74,${alpha})`
         ctx.lineWidth = oi === 0 ? 1.4 : 1
@@ -280,62 +331,81 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
         ctx.stroke()
         ctx.setLineDash([])
 
-        // 已实现的真实收盘：小圆点，露出跟预测线的差
         for (const point of pts) {
           if (!Number.isFinite(point.actual)) continue
           ctx.beginPath()
-          ctx.arc(xOf(point.x), yOf(point.actual), 1.9, 0, Math.PI * 2)
+          ctx.arc(xOf(point.x), yOf(point.actual), Math.min(2.4, Math.max(1.4, step * 0.18)), 0, Math.PI * 2)
           ctx.fillStyle = `rgba(232,232,232,${0.55 + 0.3 * (1 - oi * 0.3)})`
           ctx.fill()
         }
       })
     }
+    ctx.restore()
 
-    // 分界线
-    const divideX = padLeft + nHist * step
-    ctx.beginPath()
-    ctx.strokeStyle = 'rgba(127,127,127,0.55)'
-    ctx.setLineDash([3, 3])
-    ctx.moveTo(divideX, padTop)
-    ctx.lineTo(divideX, padTop + plotH)
-    ctx.stroke()
-    ctx.setLineDash([])
-    ctx.fillStyle = TEXT
-    ctx.fillText('预测', divideX + 4, padTop + 10)
+    // ---- 分界线与轴标签（画在裁剪之外，避免被切）------------------------
+    if (inView(nHist) || inView(nHist - 1)) {
+      const divideX = padLeft + (nHist - viewStart) * step
+      if (divideX > padLeft && divideX < padLeft + plotW) {
+        ctx.beginPath()
+        ctx.strokeStyle = 'rgba(127,127,127,0.55)'
+        ctx.setLineDash([3, 3])
+        ctx.moveTo(divideX, padTop)
+        ctx.lineTo(divideX, padTop + plotH)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.fillStyle = TEXT
+        ctx.fillText('预测', divideX + 4, padTop + 10)
+      }
+    }
 
-    // 成交量
+    // 现价标签（在轴外侧，不被裁剪）
+    if (Number.isFinite(livePrice)) {
+      const y = yOf(livePrice)
+      if (y >= padTop && y <= padTop + plotH) {
+        ctx.fillStyle = 'rgba(120,200,255,0.95)'
+        ctx.fillRect(padLeft + plotW + 2, y - 8, padRight - 6, 16)
+        ctx.fillStyle = '#0b1220'
+        ctx.fillText(fmtPrice(livePrice), padLeft + plotW + 6, y + 3)
+      }
+    }
+
+    // ---- 成交量 ----------------------------------------------------------
     const volTop = padTop + plotH + 8
-    const vHist = hist.map((b) => b.v)
-    const vPred = (data.bands?.volume?.q50 ?? []).slice(0, nPred)
-    const vMax = Math.max(...vHist, ...vPred.map((v) => v * 1.1), 1)
+    const vMax = Math.max(
+      1,
+      ...hist.map((b) => (inView(hist.indexOf(b)) ? b.v : 0)),
+      ...(data.bands?.volume?.q50 ?? []).map((v) => v * 1.1),
+    )
     const vBarW = Math.max(1, candleW * 0.8)
     hist.forEach((bar, i) => {
+      if (!inView(i)) return
       const x = xOf(i)
       const hgt = (bar.v / vMax) * volH
       ctx.fillStyle = bar.c >= bar.o ? 'rgba(224,74,74,0.35)' : 'rgba(34,160,107,0.35)'
       ctx.fillRect(x - vBarW / 2, volTop + volH - hgt, vBarW, hgt)
     })
-    vPred.forEach((v, i) => {
+    ;(data.bands?.volume?.q50 ?? []).forEach((v, i) => {
+      if (!inView(nHist + i)) return
       const x = xOf(nHist + i)
       const hgt = (v / vMax) * volH
       ctx.fillStyle = 'rgba(59,130,246,0.55)'
       ctx.fillRect(x - vBarW / 2, volTop + volH - hgt, vBarW, hgt)
     })
 
-    // 时间轴
-    const labelCount = Math.max(2, Math.min(6, Math.floor(plotW / 78)))
+    // ---- 时间轴 ----------------------------------------------------------
+    const labelCount = Math.max(2, Math.min(7, Math.floor(plotW / 84)))
     ctx.fillStyle = TEXT
     for (let i = 0; i < labelCount; i += 1) {
-      const index = Math.round((i * (total - 1)) / (labelCount - 1))
+      const index = viewStart + Math.round((i * (viewCount - 1)) / (labelCount - 1))
       const text = fmtTime(labels[index])
       const x = xOf(index)
       const w = ctx.measureText(text).width
       ctx.fillText(text, Math.min(Math.max(x - w / 2, padLeft), padLeft + plotW - w), heightPx - 5)
     }
 
-    // 悬浮十字线
+    // ---- 悬浮十字线 ------------------------------------------------------
     if (hover !== null) {
-      const index = Math.max(0, Math.min(total - 1, Math.round((hoverPos.x - padLeft) / step - 0.5)))
+      const index = Math.round(indexAtX({ plotLeft: padLeft, step, viewStart, viewCount }, hoverPos.x))
       const x = xOf(index)
       ctx.beginPath()
       ctx.strokeStyle = 'rgba(127,127,127,0.5)'
@@ -344,17 +414,20 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       ctx.lineTo(x, volTop + volH)
       ctx.stroke()
       ctx.setLineDash([])
-      const price = min + ((max - min) * (1 - (hoverPos.y - padTop) / plotH))
       if (hoverPos.y >= padTop && hoverPos.y <= padTop + plotH) {
+        ctx.beginPath()
+        ctx.moveTo(padLeft, hoverPos.y)
+        ctx.lineTo(padLeft + plotW, hoverPos.y)
+        ctx.stroke()
+        const price = min + ((max - min) * (1 - (hoverPos.y - padTop) / plotH))
         ctx.fillStyle = 'rgba(127,127,127,0.9)'
-        ctx.fillRect(padLeft + plotW + 2, hoverPos.y - 8, padRight - 4, 16)
+        ctx.fillRect(padLeft + plotW + 2, hoverPos.y - 8, padRight - 6, 16)
         ctx.fillStyle = '#fff'
         ctx.fillText(fmtPrice(price), padLeft + plotW + 6, hoverPos.y + 3)
       }
-      canvas.dataset.index = String(index)
     }
-    // 注意：livePrice / overlays 都必须进依赖，否则闭包里永远是旧值、画布不重绘
-  }, [data, height, hover, hoverPos, overlays, livePrice, liveCandle])
+    // 注意：livePrice / overlays / liveCandle / view 都必须进依赖，否则画布不重绘
+  }, [data, height, hover, hoverPos, overlays, livePrice, liveCandle, view])
 
   React.useEffect(() => {
     draw()
@@ -365,54 +438,145 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     return () => observer.disconnect()
   }, [draw])
 
-  const onMove = (event) => {
+  // ---- 缩放 --------------------------------------------------------------
+
+  const zoomBy = (factor) => {
+    const { total } = geomRef.current
+    setView((current) => zoomView(current, total, factor))
+  }
+
+  const resetView = () => setView({ start: 0, count: 0 })
+
+  const focusPrediction = () => {
+    const { total } = geomRef.current
+    const nPred = (data?.pathMedian ?? []).length
+    setView(tailView(total, Math.max(nPred * 2, 40)))
+  }
+
+  const onWheel = (event) => {
+    if (!data) return
+    event.preventDefault()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const geom = geomRef.current
+    const cursorIndex = indexAtX(geom, event.clientX - rect.left)
+    const factor = event.deltaY < 0 ? 0.82 : 1.22
+    setView((current) => zoomView(current, geom.total, factor, cursorIndex))
+  }
+
+  // ---- 拖拽平移 ----------------------------------------------------------
+  const onMouseDown = (event) => {
+    if (event.button !== 0) return
+    const { viewStart, viewCount, step } = geomRef.current
+    setDrag({ x: event.clientX, start: viewStart, moved: false, step })
+  }
+
+  const onMouseMove = (event) => {
     const rect = event.currentTarget.getBoundingClientRect()
     setHoverPos({ x: event.clientX - rect.left, y: event.clientY - rect.top })
     if (hover === null) setHover(0)
+    if (drag) {
+      const { total, viewCount } = geomRef.current
+      const dx = event.clientX - drag.x
+      if (Math.abs(dx) > 2) {
+        const shift = Math.round(-dx / Math.max(1, drag.step))
+        setView({ start: panView({ start: drag.start, count: viewCount }, total, shift).start, count: viewCount })
+      }
+    }
   }
 
-  const onLeave = () => setHover(null)
+  const onMouseUp = () => setDrag(null)
+  const onLeave = () => {
+    setHover(null)
+    setDrag(null)
+  }
 
-  // 悬浮信息
+  // ---- 悬停信息 ----------------------------------------------------------
+  // 悬停下标直接从当前几何推算：之前读 canvas.dataset.index 会滞后一帧，
+  // 悬停面板显示的是「上一个鼠标位置」的数据。
   let tip = null
   if (hover !== null && data) {
-    const index = Number(canvasRef.current?.dataset.index ?? 0)
+    const index = Math.round(indexAtX(geomRef.current, hoverPos.x))
     const nHist = Math.min(data.history?.length ?? 0, 60)
+    const hist = (data.history ?? []).slice(-nHist)
     if (index < nHist) {
-      const bar = data.history.slice(-nHist)[index]
+      const bar = hist[index]
+      const prev = index > 0 ? hist[index - 1] : null
       if (bar) {
-        tip = { label: bar.t, rows: [['开', bar.o], ['高', bar.h], ['低', bar.l], ['收', bar.c]] }
+        const change = prev && prev.c > 0 ? (bar.c / prev.c - 1) : null
+        tip = {
+          kind: '历史',
+          label: fmtTimeFull(bar.t),
+          rows: [
+            ['开', fmtPrice(bar.o)],
+            ['高', fmtPrice(bar.h)],
+            ['低', fmtPrice(bar.l)],
+            ['收', fmtPrice(bar.c)],
+            ['涨跌', change === null ? '-' : `${change >= 0 ? '+' : ''}${(change * 100).toFixed(2)}%`, change === null ? null : change >= 0 ? 'up' : 'down'],
+            ['量', fmtVolume(bar.v)],
+          ],
+        }
       }
     } else {
       const i = index - nHist
       const bar = data.pathMedian?.[i]
+      const q = data.bands?.close
       if (bar) {
-        const q = data.bands?.close
+        const base = hist[hist.length - 1]?.c
+        const rel = base ? (bar.c / base - 1) : null
         tip = {
-          label: bar.t,
+          kind: '预测',
+          label: fmtTimeFull(bar.t),
           rows: [
-            ['中位', q?.q50?.[i]],
-            ['q25', q?.q25?.[i]],
-            ['q75', q?.q75?.[i]],
-            ['q05', q?.q05?.[i]],
-            ['q95', q?.q95?.[i]],
+            ['中位', fmtPrice(q?.q50?.[i])],
+            ['相对现价', rel === null ? '-' : `${rel >= 0 ? '+' : ''}${(rel * 100).toFixed(2)}%`, rel === null ? null : rel >= 0 ? 'up' : 'down'],
+            ['q05', fmtPrice(q?.q05?.[i])],
+            ['q25', fmtPrice(q?.q25?.[i])],
+            ['q75', fmtPrice(q?.q75?.[i])],
+            ['q95', fmtPrice(q?.q95?.[i])],
           ],
         }
       }
     }
   }
 
-  return h('div', { className: 'kfc-chart', ref: wrapRef },
+  const total = (Math.min(data?.history?.length ?? 0, 60)) + (data?.pathMedian?.length ?? 0)
+  const shown = visibleCount(view, total)
+  const zoomed = shown < total
+
+  // 浮层跟着鼠标走，但要翻转到不越界的一侧
+  const wrapWidth = wrapRef.current?.clientWidth ?? 600
+  const tipLeft = tip
+    ? (hoverPos.x + 180 > wrapWidth ? Math.max(8, hoverPos.x - 172) : hoverPos.x + 16)
+    : 0
+  const tipTop = tip ? Math.max(8, Math.min(hoverPos.y - 10, height - 172)) : 0
+
+  return h('div', { className: `kfc-chart ${drag ? 'dragging' : ''}`, ref: wrapRef },
+    h('div', { className: 'kfc-chartTools' },
+      h('button', { type: 'button', title: '放大（也可以滚轮）', onClick: () => zoomBy(0.7) }, '+'),
+      h('button', { type: 'button', title: '缩小（也可以滚轮）', onClick: () => zoomBy(1.4) }, '−'),
+      h('button', { type: 'button', title: '看预测区间', onClick: focusPrediction, className: 'wide' }, '预测'),
+      h('button', { type: 'button', title: '复位', onClick: resetView, className: 'wide' }, '全览')),
     h('canvas', {
       ref: canvasRef,
-      onMouseMove: onMove,
+      onMouseMove,
+      onMouseDown,
+      onMouseUp,
       onMouseLeave: onLeave,
+      onWheel,
     }),
     tip
-      ? h('div', { className: 'kfc-tip' },
-        h('div', { className: 'kfc-tipLabel' }, tip.label),
-        tip.rows.map(([label, value], i) => h('div', { className: 'kfc-tipRow', key: i },
+      ? h('div', {
+        className: `kfc-tip kind-${tip.kind === '预测' ? 'pred' : 'hist'}`,
+        style: { left: `${tipLeft}px`, top: `${tipTop}px`, right: 'auto' },
+      },
+        h('div', { className: 'kfc-tipHead' },
+          h('span', { className: 'kfc-tipKind' }, tip.kind),
+          h('span', { className: 'kfc-tipLabel' }, tip.label)),
+        tip.rows.map(([label, value, tone], i) => h('div', { className: 'kfc-tipRow', key: i },
           h('span', null, label),
-          h('b', null, fmtPrice(value)))))
+          h('b', { className: tone ?? '' }, value))))
+      : null,
+    zoomed
+      ? h('div', { className: 'kfc-zoomHint' }, `已放大：显示 ${shown}/${total} 根 · 滚轮缩放 · 拖拽平移`)
       : null)
 }

@@ -16,6 +16,10 @@
 
 ![实时现价](preview/panel-live.png)
 
+放大后悬停，数值面板跟着光标走（`preview/panel-zoom.png`）：
+
+![缩放与悬停](preview/panel-zoom.png)
+
 勾选「对比历史」后，图上会叠加过去预测的中位线与真实收盘（`preview/panel-compare.png`）：
 
 ![历史预测对比](preview/panel-compare.png)
@@ -99,6 +103,20 @@ flow matching 积分——没有 AR 模型那种 token-by-token 的自回归结�
 「实时跟随」和手动「重新预测」都是**非破坏式**的：旧图一直留在屏幕上，
 右上角显示细进度和「刷新中 N/M」，新结果算完才替换；失败也只在顶部出一条提示，旧图继续可用。
 只有换股票、换周期这种「目标变了」的情况才会清空旧图。
+
+### 图表交互
+
+| 操作 | 效果 |
+| --- | --- |
+| 滚轮 | 光标位置为锚点缩放（放大不会跳走） |
+| 拖拽 | 左右平移；放大后才有意义 |
+| 悬停 | 十字线 + 数值面板跟着光标走，显示开/高/低/收/涨跌/量，预测区另给 q05–q95 与相对现价 |
+| `+` / `−` 按钮 | 以视窗中心缩放 |
+| `预测` 按钮 | 直接把视窗贴到预测区间（留两倍宽度） |
+| `全览` 按钮 | 复位成全部显示 |
+
+放大后纵向范围只按**视窗内的数据**算，所以细节真的会放大，而不是只把横轴拉开。
+缩放状态在换股票 / 换周期 / 换 anchor 时会自动复位。
 
 ### 面板读法
 
@@ -231,11 +249,12 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 - **和官方参考对齐**：用官方 demo 数据（`300591.SZ` 5m，anchor 2026-01-23）跑同一套窗口构造与采样，
   得到的末端收益中位数 −4.8%（官方发布结果 −5.6%，差异来自随机种子），随后 96 根真实 bar 的实际值 −5.8%，
   说明特征、规范化、日历特征与采样器与论文实现一致。
-- **测试覆盖**（`npm test`，36 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
+- **测试覆盖**（`npm test`，44 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
   `/forecast` 的 SSE 事件顺序、种子可复现性、涨跌停幅度推断、K 线不足与非法输入的报错路径；
   状态文件读写/合并/损坏回落/外部改动检测、常用股票排序与上限、相对时间格式化；
   `/state`、`/tick`、`/history` 的路由契约；历史预测与真实 bar 的对齐、未实现部分留空、评分字段；
-  `/tick` 单边失败与双失败分支；画布 `draw` 的依赖数组完整性。
+  `/tick` 单边失败与双失败分支；画布 `draw` 的依赖数组完整性；
+  图表视窗算术（缩放锚点、边界收敛、平移、像素→下标）。
   其中一项会用真实权重跑两次预测，断言两条结果逐位相同。
 
 ## 已知限制
@@ -250,12 +269,12 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.2.2`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.2.3`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |
 | 推理设备 | Apple M4 / `mps`，fp32；首次加载权重约 4–5 秒 |
-| 自检 | `npm test` 36 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
+| 自检 | `npm test` 44 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
 
 浏览器半是随插件加载的模块，需要 **重启一次 Harness**（或重开桌面窗口）让它进入新的模块代，
 侧栏才会出现「KiT 走势预测」；Host 半的路由已经随安装即时生效。

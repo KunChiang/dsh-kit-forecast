@@ -55,6 +55,11 @@ export function patchState(patch) {
   return postJson('/state', patch ?? {})
 }
 
+/** 彻底移除一只股票：常用列表、备注、它的历史预测、上次预测一起清。 */
+export function forgetStock(code) {
+  return postJson('/state', { forget: code })
+}
+
 /**
  * 消费一个 SSE 流。
  * @param {string} path

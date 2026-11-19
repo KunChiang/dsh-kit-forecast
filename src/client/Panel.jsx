@@ -1,5 +1,5 @@
 import React from 'react'
-import { fetchBars, fetchHistory, fetchState, fetchStatus, fetchTick, patchState, runForecast, runSetup, searchStocks } from './api.js'
+import { fetchBars, fetchHistory, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { NS } from './i18n.js'
 import { inTradingSession, relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
@@ -203,7 +203,10 @@ export function KitForecastPanel({ ctx }) {
         if (typeof prefs.comparePast === 'boolean') setComparePast(prefs.comparePast)
         if (typeof prefs.incremental === 'boolean') setIncremental(prefs.incremental)
         const last = state.last
-        if (last?.result?.code) {
+        // 只恢复「仍在常用列表里」的股票：用户删掉之后不该又被 last 复活
+        const remembered = Array.isArray(state.watchlist)
+          && state.watchlist.some((w) => w.code === last?.result?.code)
+        if (last?.result?.code && (remembered || !state.watchlist?.length)) {
           setResult(last.result)
           setResultAt(last.at ?? Date.now())
           setPhase('done')
@@ -558,12 +561,35 @@ export function KitForecastPanel({ ctx }) {
     })
   }
 
+  /**
+   * 从「常用」里移除一只股票。
+   *
+   * 注意不能只改 watchlist：last（上次预测）、notes（记住的周期）、history（对比用）
+   * 里都还留着它，重开面板就会把这只股票又恢复出来。所以这里走 forgetStock，
+   * 由 Host 一次性清干净。
+   */
   const removeFromWatchlist = (code) => {
-    setWatchlist((prev) => {
-      const next = prev.filter((entry) => entry.code !== code)
-      persist({ watchlist: next })
+    setWatchlist((prev) => prev.filter((entry) => entry.code !== code))
+    setNotes((prev) => {
+      if (!(code in prev)) return prev
+      const next = { ...prev }
+      delete next[code]
       return next
     })
+    forgetStock(code).catch(() => {})
+
+    // 正在看的就是这只股票：把画面也一起清掉，否则它还会留在图上
+    if (result?.code === code) {
+      setResult(null)
+      setOverlays([])
+      setResultAt(0)
+      setPhase('idle')
+      setPreviewBars(null)
+    }
+    if (selected?.code === code) {
+      setSelected(null)
+      setKeyword('')
+    }
   }
 
   /**

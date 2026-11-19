@@ -388,6 +388,12 @@ function createServer(ctx, config, paths, overrides = {}) {
     // 传了内容就是写入（合并式），空 body 就是读取
     const hasPatch = Object.keys(body ?? {}).length > 0
     if (hasPatch) {
+      // 显式「彻底删除某只股票」：连 last / notes / history 一起清
+      const forgetCode = asString(body.forget)
+      if (forgetCode) {
+        const next = store.forget(forgetCode)
+        return noStoreJson({ ok: true, state: next })
+      }
       const next = store.patch({
         ...(Array.isArray(body.watchlist) ? { watchlist: body.watchlist } : {}),
         ...('last' in body ? { last: body.last } : {}),

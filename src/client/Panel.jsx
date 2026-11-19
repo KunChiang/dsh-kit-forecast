@@ -2,7 +2,7 @@ import React from 'react'
 import { fetchHistory, fetchState, fetchStatus, fetchTick, patchState, runForecast, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { NS } from './i18n.js'
-import { relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
+import { inTradingSession, relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
 
 const QUALITY = [
   { key: 'fast', paths: 0.5, steps: 0.6 },
@@ -112,6 +112,7 @@ export function KitForecastPanel({ ctx }) {
   const [notice, setNotice] = React.useState('')
   const [elapsed, setElapsed] = React.useState(0)
   const [now, setNow] = React.useState(Date.now())
+  const [marketOpen, setMarketOpen] = React.useState(() => inTradingSession())
 
   const abortRef = React.useRef(null)
   const runningRef = React.useRef(false)
@@ -123,7 +124,10 @@ export function KitForecastPanel({ ctx }) {
 
   // 秒级时钟：用于「x 分钟前」「下次刷新」这类轻量显示
   React.useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 5000)
+    const id = setInterval(() => {
+      setNow(Date.now())
+      setMarketOpen(inTradingSession())
+    }, 5000)
     return () => clearInterval(id)
   }, [])
 
@@ -375,32 +379,65 @@ export function KitForecastPanel({ ctx }) {
    */
   const [tickAt, setTickAt] = React.useState(0)
   const [tickState, setTickState] = React.useState('idle') // idle | ok | fail
+  // 心跳拿到的实时盘口：独立于预测结果，盘中每分钟都会更新
+  const [liveQuote, setLiveQuote] = React.useState(null)
+  const lastRunAnchorRef = React.useRef(null)
+
+  /**
+   * 心跳分两件事，不要混为一谈：
+   *
+   *   A. 行情刷新（很轻，每 15–60 秒一次，一直跑）
+   *      —— 盘口价格/涨跌幅/成交量/涨停价，以及「最后一根已收盘 K 线」是什么
+   *
+   *   B. 模型重算（很重，20–80 秒，只在必要时）
+   *      —— 只有出现新的已收盘 bar 才重算；否则同一根 bar 反复算毫无新信息
+   *
+   * 之前把这两件事绑在一起，导致日线一整天都不刷新价格，看起来像「数据不实时」。
+   */
   React.useEffect(() => {
-    if (!autoRefresh || !hydrated) return undefined
+    // 行情刷新始终开启：它只是读盘口（几 KB），和「要不要重算模型」是两回事。
+    // autoRefresh 只控制 B 段（模型重算）。
+    if (!hydrated) return undefined
     const code = selected?.code ?? result?.code
     if (!code) return undefined
-    const interval = scale === '1m' ? 15000 : scale === '1d' ? 60000 : 30000
-    const id = setInterval(async () => {
+    // 行情刷新频率：盘中 15–20 秒（保证价格是活的），休市降到 5 分钟（价格不会变）
+    const open = inTradingSession()
+    const quoteInterval = !open ? 300000 : (scale === '1m' || scale === '5m' ? 15000 : 20000)
+    let cancelled = false
+
+    const beat = async () => {
       if (document.visibilityState !== 'visible') return
-      if (runningRef.current) return
       try {
         const data = await fetchTick(code, scale)
+        if (cancelled) return
         setTickAt(Date.now())
         setTickState('ok')
+        if (data?.quote) setLiveQuote({ ...data.quote, code })
+        // B. 只在出现新 bar 时才重算；正在跑就跳过，别排队
         const latest = data?.asOf
-        const current = result?.asOf
-        // 换股票/换周期（result 对不上）时也补一次，避免停在旧目标上
         const stale = result?.code !== code || result?.scale !== scale
-        if ((latest && latest !== current) || stale) {
+        const newBar = latest && latest !== result?.asOf
+        if (autoRefresh && (newBar || stale) && !runningRef.current && lastRunAnchorRef.current !== latest) {
+          lastRunAnchorRef.current = latest
           runRef.current({ silent: true })
         }
       } catch {
-        // 心跳失败不打扰用户，下一轮再试
-        setTickState('fail')
+        if (!cancelled) setTickState('fail')
       }
-    }, interval)
-    return () => clearInterval(id)
-  }, [autoRefresh, hydrated, scale, selected?.code, result?.code, result?.asOf])
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') beat()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    beat()
+    const id = setInterval(beat, quoteInterval)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [autoRefresh, hydrated, scale, selected?.code, result?.code, result?.scale, result?.asOf])
 
   // 周期/参数变化时记住偏好
   React.useEffect(() => {
@@ -458,7 +495,8 @@ export function KitForecastPanel({ ctx }) {
     : SCALE_ORDER.map((key) => ({ key, label: key, Lc: 0, Lh: 0 }))
   const ready = status?.ready === true
   const setupVisible = !ready && status !== null && !setup.running
-  const quote = result?.quote ?? null
+  // 优先显示心跳拿到的最新盘口；预测结果里附带的报价只在没有心跳时兜底
+  const quote = (liveQuote && (!result || liveQuote.code === result.code) ? liveQuote : result?.quote) ?? null
   const quoteUp = (quote?.changePercent ?? 0) >= 0
   const activeCode = selected?.code ?? result?.code ?? null
   const activeName = selected?.name ?? result?.name ?? ''
@@ -569,7 +607,13 @@ export function KitForecastPanel({ ctx }) {
               type="button"
               className={`kfc-scale ${scale === item.key ? 'active' : ''}`}
               title={`${item.label} · 历史 ${item.Lc} 根 / 预测 ${item.Lh} 根`}
-              onClick={() => setScale(item.key)}
+              onClick={() => {
+                // 换了周期，旧图就属于另一个尺度了：有选中的股票就直接重算，
+                // 否则只记下周期，等用户点「开始预测」
+                setScale(item.key)
+                const code = selected?.code ?? result?.code
+                if (code) run({ code, scale: item.key })
+              }}
             >
               {item.key}
             </button>
@@ -683,6 +727,7 @@ export function KitForecastPanel({ ctx }) {
           {quote && (
             <>
               <div className={`kfc-quotePrice ${quoteUp ? 'up' : 'down'}`}>
+                {tickState === 'ok' && liveQuote ? <span className="kfc-liveDot" title={t('livePriceHint')} /> : null}
                 {priceStr(quote.price)}
                 <span>{pct((quote.changePercent ?? 0) / 100)}</span>
               </div>
@@ -692,6 +737,12 @@ export function KitForecastPanel({ ctx }) {
                 <span>低 {priceStr(quote.low)}</span>
                 <span>量 {numStr(quote.volume)}</span>
                 <span>{quoteTime(quote.time)}</span>
+                {tickAt > 0 ? (
+                  <span className="kfc-tickAge">
+                    {t('quoteUpdated')} {relativeTime(new Date(tickAt).toISOString(), now)}
+                  </span>
+                ) : null}
+                {!marketOpen ? <span className="kfc-chip">{t('marketClosed')}</span> : null}
               </div>
             </>
           )}
@@ -706,13 +757,14 @@ export function KitForecastPanel({ ctx }) {
               {resultAt > 0 ? (
                 <span className="kfc-chip">{t('updated')} {relativeTime(new Date(resultAt).toISOString(), now)}</span>
               ) : null}
-              {autoRefresh && !running ? (
+              {result?.droppedForming ? <span className="kfc-chip warn">{t('formingDropped')}</span> : null}
+              {tickState !== 'idle' && !running ? (
                 <span
                   className={`kfc-chip live ${tickState === 'fail' ? 'warn' : ''}`}
-                  title={tickState === 'fail' ? t('watchFail') : t('watchHint')}
+                  title={tickState === 'fail' ? t('watchFail') : (autoRefresh ? t('watchHint') : t('quoteOnlyHint'))}
                 >
                   <span className="kfc-dot" />
-                  {tickState === 'fail' ? t('watchRetry') : t('watching')}
+                  {tickState === 'fail' ? t('watchRetry') : (autoRefresh ? t('watching') : t('quoteOnly'))}
                 </span>
               ) : null}
             </div>
@@ -766,6 +818,7 @@ export function KitForecastPanel({ ctx }) {
               data={result}
               height={340}
               overlays={comparePast ? overlays : null}
+              livePrice={Number.isFinite(quote?.price) ? quote.price : null}
             />
             {comparePast && overlays && overlays.some((item) => item.verify) ? (
               <div className="kfc-compare">

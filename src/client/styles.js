@@ -602,4 +602,22 @@ export const STYLES = `
   color: var(--dsw-alias-label-secondary);
   font-size: 10.5px;
 }
+
+/* 现价标记 ------------------------------------------------------------- */
+.kfc-liveDot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #6ec1ff;
+  box-shadow: 0 0 0 0 rgba(110,193,255,.7);
+  animation: kfc-liveRing 1.8s ease-out infinite;
+  vertical-align: middle;
+}
+@keyframes kfc-liveRing {
+  0% { box-shadow: 0 0 0 0 rgba(110,193,255,.55); }
+  70% { box-shadow: 0 0 0 7px rgba(110,193,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(110,193,255,0); }
+}
+.kfc-tickAge { opacity: .75; }
 `

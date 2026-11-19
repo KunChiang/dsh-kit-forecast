@@ -35,7 +35,7 @@ function fmtTime(label) {
   return time === '15:00' && label.length > 10 ? date : `${date} ${time}`
 }
 
-export function ForecastChart({ data, height = 320, overlays = null }) {
+export function ForecastChart({ data, height = 320, overlays = null, livePrice = null }) {
   const canvasRef = React.useRef(null)
   const wrapRef = React.useRef(null)
   const [hover, setHover] = React.useState(null)
@@ -91,6 +91,7 @@ export function ForecastChart({ data, height = 320, overlays = null }) {
         if (Number.isFinite(point.actual)) { lows.push(point.actual); highs.push(point.actual) }
       }
     }
+    if (Number.isFinite(livePrice)) { lows.push(livePrice); highs.push(livePrice) }
     let min = Math.min(...lows)
     let max = Math.max(...highs)
     if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
@@ -180,6 +181,26 @@ export function ForecastChart({ data, height = 320, overlays = null }) {
       })
       ctx.stroke()
       ctx.setLineDash([])
+    }
+
+    // ---- 现价线 ----------------------------------------------------------
+    // 盘中最后成交价，把「现在在哪」和预测区间放在一起看
+    if (Number.isFinite(livePrice)) {
+      const y = yOf(livePrice)
+      if (y >= padTop && y <= padTop + plotH) {
+        ctx.beginPath()
+        ctx.strokeStyle = 'rgba(120,200,255,0.55)'
+        ctx.lineWidth = 1
+        ctx.setLineDash([2, 4])
+        ctx.moveTo(padLeft, y)
+        ctx.lineTo(padLeft + plotW, y)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.fillStyle = 'rgba(120,200,255,0.95)'
+        ctx.fillRect(padLeft + plotW + 2, y - 8, padRight - 4, 16)
+        ctx.fillStyle = '#0b1220'
+        ctx.fillText(fmtPrice(livePrice), padLeft + plotW + 6, y + 3)
+      }
     }
 
     // ---- 历史预测对比 ----------------------------------------------------

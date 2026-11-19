@@ -92,6 +92,38 @@ test('/tick 只回最后一根收盘 bar 与盘口，不触发推理', async () 
   }
 })
 
+test('/tick 在行情或 K 线单边失败时仍可用', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-routes-'))
+  try {
+    // K 线挂了，但盘口正常：仍应返回 quote
+    const server = harness(dir)
+    server.market.bars = async () => { throw new Error('bars down') }
+    const onlyQuote = await post(server.handleTick, { code: '600519', scale: '1d' })
+    assert.equal(onlyQuote.status, 200)
+    assert.equal(onlyQuote.data.quote.name, '测试股')
+    assert.equal(onlyQuote.data.asOf, null)
+    assert.match(onlyQuote.data.barsError, /bars down/)
+
+    // 盘口挂了，但 K 线正常：仍应返回 asOf
+    const server2 = harness(dir)
+    server2.market.quote = async () => { throw new Error('quote down') }
+    const onlyBars = await post(server2.handleTick, { code: '600519', scale: '1d' })
+    assert.equal(onlyBars.status, 200)
+    assert.equal(onlyBars.data.quote, null)
+    assert.equal(onlyBars.data.asOf, '2026-11-19 15:00:00')
+    assert.match(onlyBars.data.quoteError, /quote down/)
+
+    // 两边都挂：503
+    const server3 = harness(dir)
+    server3.market.bars = async () => { throw new Error('bars down') }
+    server3.market.quote = async () => { throw new Error('quote down') }
+    const none = await post(server3.handleTick, { code: '600519', scale: '1d' })
+    assert.equal(none.status, 503)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('/tick 拒绝非法参数', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'kit-routes-'))
   try {

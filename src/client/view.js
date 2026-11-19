@@ -84,3 +84,56 @@ export function indexAtX(geom, x) {
   const raw = viewStart + (x - plotLeft) / Math.max(1e-6, step) - 0.5
   return clamp(raw, viewStart, viewStart + viewCount - 1)
 }
+/**
+ * 默认视窗：让图上能看到「最近一个交易日」的完整走势。
+ *
+ * 1m 一天 240 根、5m 48 根、日线 1 根，所以不能固定写死根数：
+ *   - 日线：看最近 60 个交易日
+ *   - 分钟级：最近一个交易日 + 前面 20 根做上下文（避免开盘就断了）
+ * 早盘刚开、今天只有几根时，会自动把上一个交易日也算进来。
+ *
+ * @param {Array<{t:string}>} history 历史 bar（按时间升序，最后一个是 anchor）
+ * @param {number} nPred 预测根数
+ * @param {string} scale 周期
+ * @returns {{start:number,count:number}} 视窗；count=0 表示全部
+ */
+export function sessionView(history, nPred, scale, { dailyBars = 60, contextBars = 20 } = {}) {
+  const nHist = Array.isArray(history) ? history.length : 0
+  const total = nHist + (Number.isFinite(nPred) ? nPred : 0)
+  if (nHist === 0) return { start: 0, count: 0 }
+
+  let historyShow
+  if (scale === '1d') {
+    historyShow = Math.min(nHist, dailyBars)
+  } else {
+    // 数出「最后一个交易日」有多少根
+    const lastDay = String(history[nHist - 1].t ?? '').slice(0, 10)
+    let todayBars = 0
+    for (let i = nHist - 1; i >= 0; i -= 1) {
+      if (String(history[i].t ?? '').slice(0, 10) !== lastDay) break
+      todayBars += 1
+    }
+    // 今天太短（刚开盘）就把上一交易日并进来
+    if (todayBars < 30 && todayBars < nHist) {
+      let prevDay = null
+      for (let i = nHist - todayBars - 1; i >= 0; i -= 1) {
+        const day = String(history[i].t ?? '').slice(0, 10)
+        if (prevDay === null) prevDay = day
+        if (day !== prevDay) break
+        todayBars += 1
+      }
+    }
+    historyShow = Math.min(nHist, todayBars + contextBars)
+  }
+
+  const count = Math.min(total, historyShow + (Number.isFinite(nPred) ? nPred : 0))
+  if (count >= total) return { start: 0, count: 0 }
+  return { start: total - count, count }
+}
+
+/** 两个视窗是否等价（用于判断用户有没有手动缩放过）。 */
+export function sameView(a, b) {
+  const left = a ?? { start: 0, count: 0 }
+  const right = b ?? { start: 0, count: 0 }
+  return left.start === right.start && left.count === right.count
+}

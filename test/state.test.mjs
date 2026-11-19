@@ -55,7 +55,7 @@ test('remember() 会裁剪冗余字段，避免状态文件膨胀', () => {
   const dir = tempDir()
   try {
     const store = createStateStore(dir, quiet)
-    const history = Array.from({ length: 200 }, (_, i) => ({ t: `t${i}`, o: 1, h: 1, l: 1, c: 1, v: 1 }))
+    const history = Array.from({ length: 600 }, (_, i) => ({ t: `t${i}`, o: 1, h: 1, l: 1, c: 1, v: 1 }))
     store.remember({
       code: '600519.SH', name: '贵州茅台', scale: '1d',
       history, bands: { close: { q50: [1, 2] } }, pathMedian: [{ t: 'x', o: 1, h: 1, l: 1, c: 1, v: 1 }],
@@ -63,7 +63,8 @@ test('remember() 会裁剪冗余字段，避免状态文件膨胀', () => {
       stats: { retMedian: 0.01 }, quote: { price: 10 },
     })
     const saved = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8'))
-    assert.equal(saved.last.result.history.length, 60, '历史只保留最近 60 根')
+    // 1m 一个交易日 240 根，所以要留够完整交易日的量（400 根）
+    assert.equal(saved.last.result.history.length, 400, '历史保留最近 400 根')
     assert.equal(saved.last.result.pathBull, undefined, '冗余路径不落盘')
     assert.deepEqual(saved.last.result.pathMedian, [{ t: 'x', o: 1, h: 1, l: 1, c: 1, v: 1 }])
     assert.equal(saved.last.result.stats.retMedian, 0.01)

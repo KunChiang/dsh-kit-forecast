@@ -77,8 +77,8 @@ function trimResult(result) {
     generatedAt: result.generatedAt,
     quote: result.quote ?? null,
     stats: result.stats,
-    // 画图只要最近 60 根历史 + 分位带 + 中位路径
-    history: Array.isArray(result.history) ? result.history.slice(-60) : [],
+    // 画图要看完整交易日（1m 一天 240 根），所以保留 400 根
+    history: Array.isArray(result.history) ? result.history.slice(-400) : [],
     futureTimestamps: result.futureTimestamps ?? [],
     bands: result.bands ?? {},
     pathMedian: result.pathMedian ?? [],

@@ -1,5 +1,5 @@
 import React from 'react'
-import { indexAtX, normalizeView, panView, tailView, visibleCount, zoomView } from './view.js'
+import { indexAtX, normalizeView, panView, sameView, sessionView, tailView, visibleCount, zoomView } from './view.js'
 
 const h = React.createElement
 
@@ -68,9 +68,10 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
   // 绘制时把几何信息记下来，供滚轮/拖拽把像素换算成 bar 下标
   const geomRef = React.useRef({ step: 1, plotLeft: 0, plotWidth: 0, viewStart: 0, viewCount: 1, total: 1 })
 
-  // 换股票 / 换周期 / 换 anchor 时复位视窗，避免停在上一个标的的缩放位置
+  // 换股票 / 换周期 / 换 anchor 时，把视窗重置成「最近一个交易日」
+  // （之前固定看最近 60 根，1m 只有 1 小时，上午的数据根本看不见）
   React.useEffect(() => {
-    setView({ start: 0, count: 0 })
+    setView(sessionView(data?.history ?? [], data?.pathMedian?.length ?? 0, data?.scale))
   }, [data?.code, data?.scale, data?.asOf])
 
   const draw = React.useCallback(() => {
@@ -92,8 +93,9 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     const history = data.history ?? []
     const close = data.bands?.close
     const median = data.pathMedian ?? []
-    const nHist = Math.min(history.length, 60)
-    const hist = history.slice(-nHist)
+    // 不在这里截断：Host 已按周期给足「一整个交易日」的历史
+    const nHist = history.length
+    const hist = history
     const nPred = median.length
     if (nHist === 0 || nPred === 0) return
     const labels = [...hist.map((b) => b.t), ...median.map((b) => b.t)]
@@ -204,6 +206,10 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     }
 
     // ---- 蜡烛 ------------------------------------------------------------
+    // 每根不足 2.2px 才退化成收盘价折线：再密蜡烛就糊成一片了。
+    // 完整一天（240 根）在常规窗口宽度下约 2.8px/根，仍然画蜡烛。
+    const dense = step < 2.2
+
     const drawCandle = (index, bar, color, alpha = 1) => {
       const x = xOf(index)
       ctx.globalAlpha = alpha
@@ -219,10 +225,25 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       ctx.globalAlpha = 1
     }
 
-    hist.forEach((bar, i) => {
-      if (!inView(i)) return
-      drawCandle(i, bar, bar.c >= bar.o ? UP : DOWN, 0.45)
-    })
+    if (dense) {
+      // 收盘价折线：密集时反而比蜡烛更能看清一天的形状
+      ctx.beginPath()
+      ctx.strokeStyle = 'rgba(150,150,150,0.85)'
+      ctx.lineWidth = 1
+      let started = false
+      hist.forEach((bar, i) => {
+        if (!inView(i)) return
+        const x = xOf(i)
+        const y = yOf(bar.c)
+        if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
+      })
+      ctx.stroke()
+    } else {
+      hist.forEach((bar, i) => {
+        if (!inView(i)) return
+        drawCandle(i, bar, bar.c >= bar.o ? UP : DOWN, 0.45)
+      })
+    }
     median.forEach((bar, i) => {
       if (!inView(nHist + i)) return
       drawCandle(nHist + i, bar, bar.c >= bar.o ? PRED : '#8b5cf6', 0.9)
@@ -496,8 +517,8 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
   let tip = null
   if (hover !== null && data) {
     const index = Math.round(indexAtX(geomRef.current, hoverPos.x))
-    const nHist = Math.min(data.history?.length ?? 0, 60)
-    const hist = (data.history ?? []).slice(-nHist)
+    const nHist = data.history?.length ?? 0
+    const hist = data.history ?? []
     if (index < nHist) {
       const bar = hist[index]
       const prev = index > 0 ? hist[index - 1] : null
@@ -539,9 +560,10 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     }
   }
 
-  const total = (Math.min(data?.history?.length ?? 0, 60)) + (data?.pathMedian?.length ?? 0)
+  const total = (data?.history?.length ?? 0) + (data?.pathMedian?.length ?? 0)
   const shown = visibleCount(view, total)
-  const zoomed = shown < total
+  const auto = sessionView(data?.history ?? [], data?.pathMedian?.length ?? 0, data?.scale)
+  const zoomed = !sameView(view, auto)
 
   // 浮层跟着鼠标走，但要翻转到不越界的一侧
   const wrapWidth = wrapRef.current?.clientWidth ?? 600

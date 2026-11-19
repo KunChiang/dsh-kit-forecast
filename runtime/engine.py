@@ -247,7 +247,9 @@ class Engine:
         return self.summarize(
             code=code, scale=scale, pred=pred, window=window, Lc=Lc, Lh=Lh,
             n_paths=n_paths, steps=steps, sample_seconds=sample_seconds,
-            history=df.tail(120), limit_rate=limit_rate, warm=warm_info,
+            # 给前端留够「一整个交易日 + 一点上下文」的历史：
+            # 1m 一天 240 根，5m 48 根……统一取 400 根，序列大的周期也不会缺
+            history=df.tail(int(payload.get("historyBars", 400))), limit_rate=limit_rate, warm=warm_info,
         )
 
     def _shift_paths(self, prev_z, n_paths: int, generator):

@@ -1,0 +1,377 @@
+/** KiT 走势预测 —— 面板样式。只使用 --dsw-alias-* 主题令牌，浅色/深色自动跟随。 */
+
+export const STYLES = `
+.kfc-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  container-type: inline-size;
+  container-name: kfc;
+}
+.kfc-root *, .kfc-root *::before, .kfc-root *::after { box-sizing: border-box; }
+
+/* 头部 ------------------------------------------------------------------ */
+.kfc-header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+.kfc-mark {
+  display: grid;
+  place-items: center;
+  width: 34px; height: 34px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+}
+.kfc-headCopy { min-width: 0; flex: 1; }
+.kfc-title {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0;
+  font-size: 15px; font-weight: 600; letter-spacing: .01em;
+}
+.kfc-title small {
+  font-size: 11px; font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  letter-spacing: .04em;
+}
+.kfc-sub {
+  margin: 2px 0 0;
+  font-size: 12px; line-height: 1.4;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kfc-headActions { display: flex; align-items: center; gap: 8px; flex: none; }
+.kfc-ghost.ok { color: var(--dsw-alias-state-success-primary); }
+.kfc-ghost.warn { color: var(--dsw-alias-state-warn-primary); }
+
+/* 按钮 ------------------------------------------------------------------ */
+.kfc-root button { font: inherit; }
+.kfc-ghost, .kfc-primary, .kfc-run, .kfc-scale, .kfc-suggestItem {
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.kfc-ghost {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-ghost:hover { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+.kfc-primary {
+  padding: 7px 14px;
+  font-size: 13px; font-weight: 600;
+  border-color: transparent;
+  background: var(--dsw-alias-brand-primary);
+  color: #fff;
+}
+.kfc-primary:hover { filter: brightness(1.05); }
+.kfc-run {
+  padding: 7px 16px;
+  font-size: 13px; font-weight: 600;
+  border-color: transparent;
+  background: var(--dsw-alias-brand-primary);
+  color: #fff;
+}
+.kfc-run:disabled { opacity: .6; cursor: progress; }
+
+/* 初始化 ---------------------------------------------------------------- */
+.kfc-setup {
+  margin: 14px 20px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.kfc-setupTitle { font-size: 13px; font-weight: 600; }
+.kfc-setupBody {
+  margin-top: 6px;
+  font-size: 12px; line-height: 1.65;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-setupFacts {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-setupActions { display: flex; gap: 8px; margin-top: 12px; }
+.kfc-logPane { padding: 12px 16px; }
+.kfc-log {
+  margin: 8px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 工具条 ---------------------------------------------------------------- */
+.kfc-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  flex-wrap: wrap;
+}
+.kfc-searchWrap { position: relative; flex: 1 1 220px; min-width: 180px; }
+.kfc-search {
+  width: 100%;
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit; font-size: 13px;
+  outline: none;
+}
+.kfc-search:focus { border-color: var(--dsw-alias-brand-primary); }
+.kfc-suggest {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  max-height: 240px; overflow: auto;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 10px 28px rgba(0,0,0,.14);
+}
+.kfc-suggestItem {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%;
+  padding: 6px 9px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+.kfc-suggestItem:hover { background: var(--dsw-alias-bg-layer-2); }
+.kfc-suggestCode { font-size: 11.5px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+
+.kfc-scales {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 9px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.kfc-scale {
+  padding: 5px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.kfc-scale:hover { color: var(--dsw-alias-label-primary); }
+.kfc-scale.active {
+  background: var(--dsw-alias-brand-primary);
+  color: #fff;
+}
+.kfc-select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit; font-size: 12.5px;
+}
+.kfc-check {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 行情条 ---------------------------------------------------------------- */
+.kfc-quote {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 4px 20px 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.kfc-quoteName { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
+.kfc-quoteName b { font-weight: 600; }
+.kfc-quoteName span { font-size: 11.5px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.kfc-quotePrice {
+  font-size: 20px; font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  display: flex; align-items: baseline; gap: 8px;
+}
+.kfc-quotePrice span { font-size: 12.5px; font-weight: 500; }
+.kfc-quotePrice.up, .kfc-statValue.up { color: #e04a4a; }
+.kfc-quotePrice.down, .kfc-statValue.down { color: #22a06b; }
+.kfc-quoteMeta {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.kfc-quoteSpacer { flex: 1 1 0; }
+.kfc-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 11px;
+}
+.kfc-chip.warn { color: var(--dsw-alias-state-warn-primary); }
+
+/* 主体 ------------------------------------------------------------------ */
+.kfc-main { flex: 1; min-height: 0; padding: 12px 20px 6px; display: flex; flex-direction: column; gap: 12px; }
+
+.kfc-progressPane {
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.kfc-progressHead { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.kfc-progressHead b { font-weight: 600; }
+.kfc-elapsed { margin-left: auto; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; font-size: 12px; }
+.kfc-spinner {
+  width: 12px; height: 12px; flex: none;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent);
+  border-top-color: var(--dsw-alias-brand-primary);
+  animation: kfc-spin .8s linear infinite;
+}
+@keyframes kfc-spin { to { transform: rotate(360deg); } }
+.kfc-bar {
+  margin-top: 12px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+}
+.kfc-bar i {
+  display: block; height: 100%;
+  border-radius: 999px;
+  background: var(--dsw-alias-brand-primary);
+  transition: width .25s ease;
+}
+.kfc-progressHint {
+  margin-top: 8px;
+  font-size: 11.5px; line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.kfc-errorPane {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent);
+  font-size: 12.5px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.kfc-errorPane b { color: var(--dsw-alias-state-error-primary); }
+.kfc-errorPane button { align-self: flex-start; }
+
+.kfc-chart {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  padding: 6px 4px 2px;
+  overflow: hidden;
+}
+.kfc-chart canvas { display: block; width: 100%; }
+.kfc-tip {
+  position: absolute;
+  top: 10px; right: 78px;
+  min-width: 116px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 92%, transparent);
+  backdrop-filter: blur(6px);
+  font-size: 11px;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.kfc-tipLabel { margin-bottom: 3px; color: var(--dsw-alias-label-secondary); }
+.kfc-tipRow { display: flex; justify-content: space-between; gap: 12px; line-height: 1.55; }
+.kfc-tipRow b { font-weight: 600; }
+
+.kfc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+.kfc-statCard {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.kfc-statLabel { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.kfc-statValue {
+  margin-top: 4px;
+  font-size: 16px; font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+.kfc-statHint {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.kfc-empty {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-emptyTitle { font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.kfc-emptyBody { max-width: 460px; font-size: 12.5px; line-height: 1.7; }
+
+.kfc-footNote {
+  padding: 4px 0 14px;
+  font-size: 11px; line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+@container kfc (max-width: 620px) {
+  .kfc-toolbar { padding: 10px 14px; }
+  .kfc-header { padding: 11px 14px; }
+  .kfc-main { padding: 10px 14px 6px; }
+  .kfc-quote { padding: 2px 14px 8px; }
+  .kfc-sub { display: none; }
+  .kfc-stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+}
+`

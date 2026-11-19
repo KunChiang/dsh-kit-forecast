@@ -1,0 +1,18 @@
+# 依赖与构建产物
+node_modules/
+.npm-cache/
+.build/
+.preview/
+dist/
+
+# 运行时：venv 与权重（1.1 GB）不进版本库
+.runtime/
+.model/
+prepared/
+.cache/
+
+# 系统文件
+.DS_Store
+# Python 缓存
+__pycache__/
+*.pyc

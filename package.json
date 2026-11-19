@@ -1,0 +1,66 @@
+{
+  "name": "dsh-kit-forecast",
+  "version": "1.0.6",
+  "description": "KiT A 股走势预测：接入 KiT 扩散 Transformer 基座模型，对任意 A 股做多周期实时概率预测（1m/5m/15m/30m/1h/2h/1d）。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "runtime/engine.py",
+    "runtime/kit_v1",
+    "runtime/KIT_LICENSE",
+    "runtime/configs",
+    "scripts/fetch-model.mjs",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "preview/panel-dark-result.png",
+    "preview/panel-dark-chart.png"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "dsh-plugin",
+    "stock",
+    "a-share",
+    "forecast",
+    "kline",
+    "kit"
+  ],
+  "license": "AGPL-3.0",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "icon": "./icon.svg",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "check": "node scripts/host-selftest.mjs",
+    "preview": "node scripts/ui-preview.mjs",
+    "model": "node scripts/fetch-model.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

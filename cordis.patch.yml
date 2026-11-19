@@ -1,0 +1,15 @@
+# KiT A 股走势预测 —— 组合包补丁。
+#
+# 安装后把下面这一行挂进 profile 的 Loader；Host 半负责行情抓取与推理调度，
+# Client 半在侧栏「KiT 走势预测」面板里画多周期 K 线与概率区间。
+#
+# 可选配置（插件未声明 Schema，取值都会做范围收敛）：
+#   dataDir:    运行时目录（venv / 权重），默认 $DSH_HOME/kit-forecast
+#   python:     已有 torch 环境的解释器，默认用 dataDir/venv/bin/python
+#   device:     auto | cpu | mps | cuda，默认 auto
+#   indexUrl:   pip 镜像，默认为空（走本机 pip 配置）
+#   hfHost:     权重下载镜像，默认 https://hf-mirror.com
+#   maxPaths / maxSteps / timeoutMs: 采样上限与超时
+- insert:
+    - id: kit-forecast
+      name: 'dsh-kit-forecast'

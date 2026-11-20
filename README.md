@@ -236,6 +236,11 @@ KiT 的输入是 **5 维**（`in_features=5`），特征是 `r_gap / r_body / r_
 - 模型优先取会话默认模型，否则取目录里第一个可用的对话模型（会跳过 embedding/rerank 之类）
 - 提示词只写已经拿到的数据，缺什么就不写，明确要求「不编造、区分事实与推断、说明预测是概率」
 - 默认不自动生成，点「解读」才请求（不浪费 token）；可随时取消、重新解读、清除
+- **输出按 Markdown 渲染**（标题、列表、表格、引用、行内代码、链接），涨跌幅自动红涨绿跌
+
+> Markdown 用的是自带的极简渲染器（`src/client/Markdown.jsx`），零依赖、不使用 `innerHTML`：
+> 全部产出 React 元素，链接只放行 http/https/mailto。DSH 的对话渲染器没有作为可复用组件导出给插件，
+> 而引入 remark 会让客户端包体积翻倍，所以按实际需要实现了子集。
 - 没有配置模型时给出明确提示，不会卡住
 
 ### 消息面（公告 / 新闻）
@@ -439,7 +444,7 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 - **和官方参考对齐**：用官方 demo 数据（`300591.SZ` 5m，anchor 2026-01-23）跑同一套窗口构造与采样，
   得到的末端收益中位数 −4.8%（官方发布结果 −5.6%，差异来自随机种子），随后 96 根真实 bar 的实际值 −5.8%，
   说明特征、规范化、日历特征与采样器与论文实现一致。
-- **测试覆盖**（`npm test`，97 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
+- **测试覆盖**（`npm test`，105 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
   `/forecast` 的 SSE 事件顺序、种子可复现性、涨跌停幅度推断、K 线不足与非法输入的报错路径；
   状态文件读写/合并/损坏回落/外部改动检测、常用股票排序与上限、相对时间格式化；
   `/state`、`/tick`、`/history` 的路由契约；历史预测与真实 bar 的对齐、未实现部分留空、评分字段；
@@ -453,7 +458,8 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
   大盘指数与个股同号的区分、指数不受涨跌停约束、/market 结构完整；
   AI 解读的提示词不含 undefined、无数据时拒绝、跳过非对话模型；
   历史复盘进提示词、修正 JSON 的宽容解析与越界夹回、修正路径末端对齐；
-  inject 声明（llm 必须声明且为可选）、/models 过滤与降级、用户指定模型优先。
+  inject 的正确形式（嵌套注入）、/models 过滤与降级、用户指定模型优先；
+  Markdown 渲染（结构正确、不用 innerHTML、链接协议白名单、零依赖）。
   **指数不在 KiT 训练池**，指数预测的校准度弱于个股，需如实看待。
   其中一项会用真实权重跑两次预测，断言两条结果逐位相同。
 
@@ -469,12 +475,12 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.7.2`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.7.3`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |
 | 推理设备 | Apple M4 / `mps`，fp32；首次加载权重约 4–5 秒 |
-| 自检 | `npm test` 97 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
+| 自检 | `npm test` 105 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
 
 浏览器半是随插件加载的模块，需要 **重启一次 Harness**（或重开桌面窗口）让它进入新的模块代，
 侧栏才会出现「KiT 走势预测」；Host 半的路由已经随安装即时生效。

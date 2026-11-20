@@ -1167,7 +1167,6 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   padding: 12px 14px;
   font-size: 12.5px;
   line-height: 1.72;
-  white-space: pre-wrap;
   word-break: break-word;
   max-height: 340px;
   overflow: auto;
@@ -1346,4 +1345,85 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   gap: 8px;
   margin-top: 16px;
 }
+
+/* Markdown 排版（AI 解读）--------------------------------------------- */
+.kfc-md > *:first-child { margin-top: 0; }
+.kfc-md > *:last-child { margin-bottom: 0; }
+
+.kfc-mdP {
+  margin: 0 0 8px;
+  white-space: normal;
+}
+.kfc-mdHeading {
+  margin: 14px 0 7px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.kfc-mdList {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.kfc-mdList li { margin: 3px 0; }
+.kfc-mdList li::marker { color: var(--dsw-alias-label-secondary); }
+
+.kfc-mdCode {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+.kfc-mdPre {
+  margin: 0 0 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: auto;
+}
+.kfc-mdPre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.kfc-mdQuote {
+  margin: 0 0 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-mdHr {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.kfc-md a {
+  color: var(--dsw-alias-brand-primary);
+  text-decoration: none;
+}
+.kfc-md a:hover { text-decoration: underline; }
+
+.kfc-mdTableWrap { margin: 0 0 8px; overflow-x: auto; }
+.kfc-mdTable {
+  border-collapse: collapse;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.kfc-mdTable th, .kfc-mdTable td {
+  padding: 4px 9px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  text-align: left;
+  white-space: nowrap;
+}
+.kfc-mdTable th {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 600;
+}
+
+/* 涨跌幅配色（仅 Markdown 内） */
+.kfc-mdUp { color: var(--dsw-alias-state-danger-primary); }
+.kfc-mdDown { color: var(--dsw-alias-state-success-primary); }
 `

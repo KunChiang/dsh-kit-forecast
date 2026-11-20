@@ -5,6 +5,7 @@
  * 流式输出一段解读。默认收起，点「解读」才请求（不浪费 token）。
  */
 import React from 'react'
+import { Markdown } from './Markdown.jsx'
 
 const h = React.createElement
 
@@ -72,7 +73,9 @@ export function InsightPanel({
       : null,
 
     hasText
-      ? h('div', { className: 'kfc-insightText' }, text, running ? h('span', { className: 'kfc-caret' }) : null)
+      ? h('div', { className: 'kfc-insightText' },
+        h(Markdown, { text }),
+        running ? h('span', { className: 'kfc-caret' }) : null)
       : (running
         ? h('div', { className: 'kfc-insightHint' }, t('insightWorking'))
         : h('div', { className: 'kfc-insightHint' }, t('insightHint'))))

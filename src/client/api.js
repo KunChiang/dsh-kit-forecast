@@ -40,6 +40,11 @@ export function fetchTick(code, scale) {
   return postJson('/tick', { code, scale })
 }
 
+/** 公告 + 新闻。任何一路失败都不影响另一路。 */
+export function fetchNews(code, notices = 10, news = 10) {
+  return postJson('/news', { code, notices, news })
+}
+
 /** 取历史预测与真实走势的对比数据（不给 asOf 则不过滤当前 anchor）。 */
 export function fetchHistory(code, scale, excludeAsOf, limit = 3) {
   return postJson('/history', { code, scale, excludeAsOf, limit })

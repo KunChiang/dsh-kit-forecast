@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 import { SCALES, MarketData, normalizeCode } from './datasource.js'
 import { KitEngine } from './engine.js'
+import { NewsFeed } from './news.js'
 import { createStateStore } from './state.js'
 
 export const name = 'kit-forecast'
@@ -381,6 +382,7 @@ function createServer(ctx, config, paths, overrides = {}) {
   const probePython = createPythonProbe()
   // statePath 可显式指定：开发脚本让它指向临时目录，避免污染用户真实收藏
   const store = createStateStore(paths.dataDir, logger, config.statePath)
+  const feed = overrides.feed ?? new NewsFeed({ logger })
   let setupRunning = false
 
   async function handleState(request) {
@@ -520,6 +522,19 @@ function createServer(ctx, config, paths, overrides = {}) {
     // 统一用归一化后的代码匹配，避免 600519 / 600519.SH 这类写法对不上
     const overlays = overlaysFor(store, norm.code, scale, data.bars, asString(body.excludeAsOf), limit)
     return noStoreJson({ ok: true, overlays })
+  }
+
+  /** 公告 + 新闻。任何一路失败都不影响另一路。 */
+  async function handleNews(request) {
+    const body = await request.json().catch(() => ({}))
+    const codeInput = asString(body.code)
+    if (!codeInput) return failure('kit-forecast/news', '缺少股票代码')
+    const norm = normalizeCode(codeInput)
+    if (!norm) return failure('kit-forecast/news', `无法识别的股票代码：${codeInput}`)
+    const notices = asInt(body.notices, 10, 1, 30)
+    const newsLimit = asInt(body.news, 10, 1, 30)
+    const digest = await feed.digest(norm.code, { notices, newsLimit })
+    return noStoreJson({ ok: true, ...digest })
   }
 
   async function handleBars(request) {
@@ -734,8 +749,8 @@ function createServer(ctx, config, paths, overrides = {}) {
 
   return {
     handleStatus, handleSearch, handleQuote, handleBars, handleSetup,
-    handleForecast, handleWarm, handleState, handleTick, handleHistory,
-    store, engine, market,
+    handleForecast, handleWarm, handleState, handleTick, handleHistory, handleNews,
+    store, engine, market, feed,
   }
 }
 
@@ -846,5 +861,6 @@ export function apply(ctx, rawConfig) {
     route('/state', server.handleState)
     route('/tick', server.handleTick)
     route('/history', server.handleHistory)
+    route('/news', server.handleNews)
   })
 }

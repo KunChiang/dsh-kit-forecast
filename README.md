@@ -153,6 +153,18 @@ flow matching 积分——没有 AR 模型那种 token-by-token 的自回归结�
 
 页面切回前台、或窗口重新获得焦点时会立刻补一次心跳，不用等下一个间隔。
 
+### 消息面（公告 / 新闻）
+
+图表下方的「消息面」面板，跟随当前选中的股票：
+
+| 来源 | 接口 | 内容 | 缓存 |
+| --- | --- | --- | --- |
+| 公告 | 东方财富 `np-anotice-stock` | 标题、公告分类（董事会决议/月度经营/业绩说明会…）、日期、原文链接 | 10 分钟 |
+| 新闻 | 东方财富 `np-listapi` `mTypeAndCode` | 标题、发布时间、原文链接（精确到个股） | 3 分钟 |
+
+两个tab 可切换。两路请求是独立的：**一路挂了另一路照常显示**，错误只在标签栏提示「部分来源失败」。
+标题里的 `<em>` 高亮标签会被清洗掉。
+
 ### 控件
 
 - 周期、精度都是自绘下拉（勾选态 + 键盘上下/回车/Esc + 点外部关闭），不再用原生 `<select>`
@@ -308,6 +320,7 @@ dsh plugin --profile desktop add /abs/path/to/dsh-kit-forecast
 | `POST /state` | 读取/合并写入面板状态（常用股票、上次预测、偏好） |
 | `POST /tick` | 轻量心跳：最后一根已收盘 bar + 盘口，用于判断要不要重算 |
 | `POST /history` | 历史预测与真实走势的对比（含评分） |
+| `POST /news` | 个股公告与新闻（两路独立，一路失败不影响另一路） |
 
 ## 目录结构
 
@@ -316,6 +329,7 @@ src/host/index.js       路由、SSE、初始化流程、涨跌停规则
 src/host/datasource.js  行情抓取、复权、周期聚合、已收盘 bar 过滤
 src/host/engine.js      Python worker 生命周期与 JSON Lines 调度
 src/host/state.js       面板状态持久化（state.json，原子写入 + 损坏回落）
+src/host/news.js        公告与新闻（东财两个接口，清洗 + 缓存 + 容错）
 src/client/             面板、Canvas 图表、样式、文案
 runtime/engine.py       推理 worker（构造窗口 → 采样 → 反归一化 → 汇总）
 runtime/kit_v1/         KiT 官方模型代码（AGPL-3.0，原样引入，见 runtime/KIT_LICENSE）
@@ -328,7 +342,7 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 - **和官方参考对齐**：用官方 demo 数据（`300591.SZ` 5m，anchor 2026-01-23）跑同一套窗口构造与采样，
   得到的末端收益中位数 −4.8%（官方发布结果 −5.6%，差异来自随机种子），随后 96 根真实 bar 的实际值 −5.8%，
   说明特征、规范化、日历特征与采样器与论文实现一致。
-- **测试覆盖**（`npm test`，73 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
+- **测试覆盖**（`npm test`，77 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
   `/forecast` 的 SSE 事件顺序、种子可复现性、涨跌停幅度推断、K 线不足与非法输入的报错路径；
   状态文件读写/合并/损坏回落/外部改动检测、常用股票排序与上限、相对时间格式化；
   `/state`、`/tick`、`/history` 的路由契约；历史预测与真实 bar 的对齐、未实现部分留空、评分字段；
@@ -337,7 +351,8 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
   「进面板不预测」的契约（默认关闭跟随、选股不预跑、换周期清结果、nPred=0 仍可画图）；
   持久化约束（置顶不因预测丢失、历史上限与 30 天过期、.bak 回滚、statePath 隔离）；
   切换股票/周期的契约（图表数据必须匹配当前目标、旧结果要清、overlay 补拉不死循环、联想令牌）；
-  删除股票必须删干净（forget 清 watchlist/notes/history/last，重开不复活）。
+  删除股票必须删干净（forget 清 watchlist/notes/history/last，重开不复活）；
+  公告新闻的标签清洗、路由校验、单边失败容错。
   其中一项会用真实权重跑两次预测，断言两条结果逐位相同。
 
 ## 已知限制
@@ -352,12 +367,12 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.4.5`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.5.0`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |
 | 推理设备 | Apple M4 / `mps`，fp32；首次加载权重约 4–5 秒 |
-| 自检 | `npm test` 73 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
+| 自检 | `npm test` 77 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
 
 浏览器半是随插件加载的模块，需要 **重启一次 Harness**（或重开桌面窗口）让它进入新的模块代，
 侧栏才会出现「KiT 走势预测」；Host 半的路由已经随安装即时生效。

@@ -910,4 +910,101 @@ export const STYLES = `
 
 /* 工具栏里去掉主按钮后，让它自然收尾 */
 .kfc-toolbar { padding-bottom: 10px; }
+
+/* 公告 / 新闻 ---------------------------------------------------------- */
+.kfc-news {
+  flex: none;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+.kfc-newsBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.kfc-newsTitle {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  letter-spacing: .04em;
+  margin-right: 4px;
+}
+.kfc-newsTab {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.kfc-newsTab:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2); }
+.kfc-newsTab.active {
+  color: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+}
+.kfc-newsLoading, .kfc-newsError {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-newsError { color: var(--dsw-alias-state-warn-primary); }
+
+.kfc-newsList {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 208px;
+  overflow: auto;
+}
+.kfc-newsItem {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.kfc-newsItem:hover { background: var(--dsw-alias-bg-layer-2); }
+.kfc-newsDate {
+  flex: none;
+  width: 44px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.kfc-newsTag {
+  flex: none;
+  max-width: 116px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+  line-height: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kfc-newsLink {
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: underline; }
+.kfc-newsEmpty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: center;
+}
 `

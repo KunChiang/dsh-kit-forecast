@@ -1,7 +1,8 @@
 import React from 'react'
-import { fetchBars, fetchHistory, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runSetup, searchStocks } from './api.js'
+import { fetchBars, fetchHistory, fetchNews, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { ProgressOverlay } from './ProgressOverlay.jsx'
+import { NewsPanel } from './NewsPanel.jsx'
 import { Select } from './Select.jsx'
 import { NS } from './i18n.js'
 import { inTradingSession, relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
@@ -166,6 +167,30 @@ export function KitForecastPanel({ ctx }) {
   }, [])
   // 心跳闭包里要用最新的 loadPreview（它自己依赖稳定，但显式持有更清楚）
   loadPreviewRef.current = loadPreview
+
+  /**
+   * 拉公告与新闻。跟随当前选中的股票；同一次会话里 3 分钟内不重复请求
+   * （Host 侧也有缓存，这里只是省一次往返）。
+   */
+  const newsCacheRef = React.useRef({ code: '', at: 0 })
+  const loadNews = React.useCallback(async (code, { force = false } = {}) => {
+    if (!code) return
+    const fresh = newsCacheRef.current.code === code
+      && Date.now() - newsCacheRef.current.at < 3 * 60 * 1000
+    if (!force && fresh) return
+    setNewsLoading(true)
+    setNewsError(null)
+    try {
+      const data = await fetchNews(code, 12, 12)
+      newsCacheRef.current = { code, at: Date.now() }
+      setNews({ announcements: data.announcements ?? [], news: data.news ?? [] })
+      if (data.errors?.length) setNewsError(data.errors.join('；'))
+    } catch (err) {
+      setNewsError(err.message)
+    } finally {
+      setNewsLoading(false)
+    }
+  }, [])
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -459,6 +484,11 @@ export function KitForecastPanel({ ctx }) {
   const [liveQuote, setLiveQuote] = React.useState(null)
   // 未收盘那根 K 线：用于图上画一根会长的动态蜡烛
   const [liveCandle, setLiveCandle] = React.useState(null)
+  // 公告 / 新闻
+  const [news, setNews] = React.useState(null)
+  const [newsLoading, setNewsLoading] = React.useState(false)
+  const [newsError, setNewsError] = React.useState(null)
+  const [newsTab, setNewsTab] = React.useState('news')
   // 心跳看到的最新已收盘 bar：与 result.asOf 比对，判断上次预测是否已过期
   const [latestBar, setLatestBar] = React.useState(null)
   const lastRunAnchorRef = React.useRef(null)
@@ -566,6 +596,7 @@ export function KitForecastPanel({ ctx }) {
     }
     setPreviewBars(null)
     loadPreview(item.code, valid)
+    loadNews(item.code)
     // 默认只画行情；只有调用方明确要求时才预测（例如从联想里回车）
     if (runNow) run({ code: item.code, name: item.name, scale: valid })
   }
@@ -1091,6 +1122,18 @@ export function KitForecastPanel({ ctx }) {
             />
           )}
         </div>
+
+        {activeCode ? (
+          <NewsPanel
+            data={news}
+            loading={newsLoading}
+            error={newsError}
+            tab={newsTab}
+            onTab={setNewsTab}
+            t={t}
+            now={now}
+          />
+        ) : null}
 
         <div className="kfc-footNote">{ready || !status ? t('footNote') : t('footModelMissing')}</div>
       </section>

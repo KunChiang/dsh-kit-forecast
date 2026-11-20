@@ -24,7 +24,8 @@ test('选股票默认只加载行情，不预跑模型', () => {
 })
 
 test('换周期会清掉旧周期的预测', () => {
-  const block = /const next = event\.target\.value[\s\S]{0,400}?loadPreview\(code, next\)/.exec(panel)
+  // 周期切换现在是自绘 Select 的 onChange(next)，不再是原生 select 的 event.target.value
+  const block = /onChange=\{\(next\) => \{[\s\S]{0,600}?loadPreview\(code, next\)/.exec(panel)
   assert.ok(block, '找不到换周期的处理块')
   assert.match(block[0], /setResult\(null\)/, '换周期必须清掉旧结果，避免比例尺对不上')
   assert.match(block[0], /loadPreview\(/, '换周期应改为只加载行情')

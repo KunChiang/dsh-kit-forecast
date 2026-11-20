@@ -62,6 +62,8 @@ export const zh = {
   needSetup: '运行环境还没准备好，请先完成初始化',
   preparing: '准备中…',
   stepsUnit: '步',
+  noStock: '未选择股票',
+  runHint: '用 KiT 模型预测这只股票的下一个窗口',
 
   run: '开始预测',
   runForecast: '预测',
@@ -160,6 +162,8 @@ export const en = {
   needSetup: 'Runtime is not ready yet; finish setup first',
   preparing: 'Preparing…',
   stepsUnit: 'steps',
+  noStock: 'No stock selected',
+  runHint: 'Run the KiT model on this stock',
 
   run: 'Forecast',
   runForecast: 'Predict',

@@ -215,12 +215,21 @@ export const STYLES = `
 .kfc-quote {
   flex: none;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 14px;
-  padding: 4px 20px 10px;
-  flex-wrap: wrap;
+  padding: 8px 20px 10px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
+/* 左侧内容自己换行，主按钮永远贴在右边、不会掉到下一行 */
+.kfc-quoteMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+}
+.kfc-quoteSpacer { flex: 1 1 0; }
 .kfc-quoteName { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
 .kfc-quoteName b { font-weight: 600; }
 .kfc-quoteName span { font-size: 11.5px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
@@ -805,4 +814,100 @@ export const STYLES = `
   .kfc-overlayCard { min-width: 0; width: calc(100% - 32px); gap: 10px; padding: 12px 14px; }
   .kfc-overlayCancel { padding: 4px 8px; }
 }
+
+/* 自绘下拉框 ----------------------------------------------------------- */
+.kfc-dd { position: relative; flex: none; }
+.kfc-ddTrigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.kfc-ddTrigger:hover { border-color: var(--dsw-alias-border-l2); }
+.kfc-dd.open .kfc-ddTrigger {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.kfc-ddValue {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.kfc-ddCaret {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  transition: transform .16s ease;
+}
+.kfc-dd.open .kfc-ddCaret { transform: rotate(180deg); }
+
+.kfc-ddList {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 5px);
+  left: 0;
+  min-width: 100%;
+  max-height: 288px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .3);
+  animation: kfc-ddIn .12s ease;
+}
+.kfc-ddList.right { left: auto; right: 0; }
+@keyframes kfc-ddIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+.kfc-ddItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.kfc-ddItem.active { background: var(--dsw-alias-bg-layer-2); }
+.kfc-ddItem.selected { color: var(--dsw-alias-brand-primary); }
+.kfc-ddItemLabel { flex: 1; min-width: 0; white-space: nowrap; }
+.kfc-ddItemHint {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.kfc-ddCheck { flex: none; }
+
+/* 行情条里的主按钮 ----------------------------------------------------- */
+.kfc-quote.empty .kfc-quoteName b { color: var(--dsw-alias-label-secondary); font-weight: 500; }
+.kfc-runInline {
+  flex: none;
+  margin-left: 4px;
+  padding: 7px 18px;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, transparent);
+}
+.kfc-runInline:disabled { box-shadow: none; }
+
+/* 工具栏里去掉主按钮后，让它自然收尾 */
+.kfc-toolbar { padding-bottom: 10px; }
 `

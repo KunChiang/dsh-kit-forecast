@@ -2,6 +2,7 @@ import React from 'react'
 import { fetchBars, fetchHistory, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { ProgressOverlay } from './ProgressOverlay.jsx'
+import { Select } from './Select.jsx'
 import { NS } from './i18n.js'
 import { inTradingSession, relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
 
@@ -777,14 +778,19 @@ export function KitForecastPanel({ ctx }) {
           )}
         </div>
 
-        <select
-          className="kfc-select kfc-selectScale"
+        <Select
+          className="kfc-ddScale"
           value={scale}
           title={t('scaleHint')}
-          onChange={(event) => {
+          width={188}
+          options={scales.map((item) => ({
+            value: item.key,
+            label: `${item.key} · ${item.label}`,
+            hint: `${item.Lc}/${item.Lh}`,
+          }))}
+          onChange={(next) => {
             // 换了周期，旧图就属于另一个尺度了：有选中的股票就直接重算，
-            // 否则只记下周期，等用户点「开始预测」
-            const next = event.target.value
+            // 否则只记下周期，等用户点「预测」
             setScale(next)
             const code = selected?.code ?? result?.code
             if (code) {
@@ -796,24 +802,17 @@ export function KitForecastPanel({ ctx }) {
               loadPreview(code, next)
             }
           }}
-        >
-          {scales.map((item) => (
-            <option key={item.key} value={item.key}>
-              {`${item.key} · ${item.label}（${item.Lc}/${item.Lh}）`}
-            </option>
-          ))}
-        </select>
+        />
 
-        <select
-          className="kfc-select"
+        <Select
+          className="kfc-ddQuality"
           value={quality}
           title={t('qualityHint')}
-          onChange={(event) => setQuality(event.target.value)}
-        >
-          {QUALITY.map((item) => (
-            <option key={item.key} value={item.key}>{t(`quality.${item.key}`)}</option>
-          ))}
-        </select>
+          width={104}
+          align="right"
+          options={QUALITY.map((item) => ({ value: item.key, label: t(`quality.${item.key}`) }))}
+          onChange={setQuality}
+        />
 
         <button
           type="button"
@@ -861,14 +860,6 @@ export function KitForecastPanel({ ctx }) {
           {t('incremental')}
         </label>
 
-        <button
-          type="button"
-          className="kfc-run"
-          disabled={running}
-          onClick={() => run({ silent: Boolean(result) })}
-        >
-          {running ? t('running') : result ? t('rerun') : t('runForecast')}
-        </button>
       </section>
 
       {chips.length > 0 && (
@@ -902,11 +893,12 @@ export function KitForecastPanel({ ctx }) {
         </section>
       )}
 
-      {(activeCode || result) && (
-        <section className="kfc-quote">
+      {(
+        <section className={`kfc-quote ${activeCode ? '' : 'empty'}`}>
+          <div className="kfc-quoteMain">
           <div className="kfc-quoteName">
-            <b>{activeName}</b>
-            <span>{activeCode}</span>
+            <b>{activeName || t('noStock')}</b>
+            <span>{activeCode ?? ''}</span>
           </div>
           {quote && (
             <>
@@ -953,6 +945,16 @@ export function KitForecastPanel({ ctx }) {
               ) : null}
             </div>
           )}
+          </div>
+          <button
+            type="button"
+            className="kfc-run kfc-runInline"
+            disabled={running || !activeCode}
+            title={activeCode ? t('runHint') : t('needStock')}
+            onClick={() => run({ silent: Boolean(result) })}
+          >
+            {running ? t('running') : result ? t('rerun') : t('runForecast')}
+          </button>
         </section>
       )}
 

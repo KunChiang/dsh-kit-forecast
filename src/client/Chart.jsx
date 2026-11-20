@@ -72,11 +72,22 @@ export function ForecastChart({
   // 绘制时把几何信息记下来，供滚轮/拖拽把像素换算成 bar 下标
   const geomRef = React.useRef({ step: 1, plotLeft: 0, plotWidth: 0, viewStart: 0, viewCount: 1, total: 1 })
 
-  // 换股票 / 换周期 / 换 anchor 时，把视窗重置成「最近一个交易日」
-  // （之前固定看最近 60 根，1m 只有 1 小时，上午的数据根本看不见）
+  // 换股票 / 换周期 / 出新预测时，把视窗重置成「最近一个交易日」。
+  //
+  // 注意：不能依赖 data.asOf —— 预览态每 10~15 秒重载一次行情、asOf 就会变，
+  // 视窗会被反复重置回默认位置，用户拖拽/缩放的结果立刻被吃掉
+  //（表现为「能放大但不能拖动」）。
+  // 所以只在「股票或周期变了」或「来了一份新的预测结果」时复位。
+  const resetKey = [
+    data?.code ?? '',
+    data?.scale ?? '',
+    // 只有预测结果才带 nPaths>0；预览数据不参与，避免每次刷新都复位
+    (data?.nPaths ?? 0) > 0 ? data?.asOf ?? '' : '',
+  ].join('|')
   React.useEffect(() => {
     setView(sessionView(data?.history ?? [], data?.pathMedian?.length ?? 0, data?.scale))
-  }, [data?.code, data?.scale, data?.asOf])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey])
 
   const draw = React.useCallback(() => {
     const canvas = canvasRef.current
@@ -519,31 +530,52 @@ export function ForecastChart({
   }
 
   // ---- 拖拽平移 ----------------------------------------------------------
+  // 拖动过程中指针很容易移出 canvas（甚至移出面板），所以 mousemove / mouseup
+  // 挂在 window 上。之前只挂在 canvas 上，指针一出界就丢掉 drag 状态，
+  // 表现为「拖一下就停、几乎划不动」。
+  const dragRef = React.useRef(null)
+  dragRef.current = drag
+
   const onMouseDown = (event) => {
     if (event.button !== 0) return
     const { viewStart, viewCount, step } = geomRef.current
-    setDrag({ x: event.clientX, start: viewStart, moved: false, step })
+    // 全览状态没有可平移的空间，直接不进入拖拽（避免误判为「拖不动」）
+    if (!viewCount || viewCount >= geomRef.current.total) return
+    event.preventDefault()
+    setDrag({ x: event.clientX, start: viewStart, step, moved: false })
   }
+
+  React.useEffect(() => {
+    if (!drag) return undefined
+    const move = (event) => {
+      const state = dragRef.current
+      if (!state) return
+      const { total, viewCount, step } = geomRef.current
+      const dx = event.clientX - state.x
+      if (!state.moved && Math.abs(dx) < 3) return
+      if (!state.moved) state.moved = true
+      const shift = Math.round(-dx / Math.max(0.5, step))
+      setView({
+        start: panView({ start: state.start, count: viewCount }, total, shift).start,
+        count: viewCount,
+      })
+    }
+    const up = () => setDrag(null)
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    return () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+  }, [drag])
 
   const onMouseMove = (event) => {
     const rect = event.currentTarget.getBoundingClientRect()
     setHoverPos({ x: event.clientX - rect.left, y: event.clientY - rect.top })
     if (hover === null) setHover(0)
-    if (drag) {
-      const { total, viewCount } = geomRef.current
-      const dx = event.clientX - drag.x
-      if (Math.abs(dx) > 2) {
-        const shift = Math.round(-dx / Math.max(1, drag.step))
-        setView({ start: panView({ start: drag.start, count: viewCount }, total, shift).start, count: viewCount })
-      }
-    }
   }
 
-  const onMouseUp = () => setDrag(null)
-  const onLeave = () => {
-    setHover(null)
-    setDrag(null)
-  }
+  const onLeave = () => setHover(null)
 
   // ---- 悬停信息 ----------------------------------------------------------
   // 悬停下标直接从当前几何推算：之前读 canvas.dataset.index 会滞后一帧，
@@ -616,7 +648,6 @@ export function ForecastChart({
       ref: canvasRef,
       onMouseMove,
       onMouseDown,
-      onMouseUp,
       onMouseLeave: onLeave,
       onWheel,
     }),

@@ -23,15 +23,6 @@ import { createStateStore } from './state.js'
 
 export const name = 'kit-forecast'
 
-/**
- * 声明本插件要用到的 DSH 服务。
- *
- * 少了这一行，访问 ctx.llm 会直接抛
- * `cannot get property "llm" without inject` —— 这是 DSH 的依赖声明机制：
- * 没声明过的服务不允许读。connection 在 apply 内部用 ctx.inject 拿，
- * llm 是「按需可缺」的（没配模型时其它功能照常可用），所以在这里声明。
- */
-export const inject = { required: [], optional: ['llm'] }
 
 const ROUTE_BASE = '/api/kit-forecast'
 
@@ -982,12 +973,23 @@ export function apply(ctx, rawConfig) {
 
   ctx.effect(() => () => server.engine.stop(), 'kit-forecast: engine cleanup')
 
+  /**
+   * llm 用「嵌套注入」绑定，不能在模块顶层声明 inject = ['llm']。
+   *
+   * 原因：模块级 inject 会让整个插件变成「等 llm 就绪才激活」，
+   * 而这个 profile 里如果没有 llm 服务，插件就会一直 pending，
+   * 由于它是必装插件，DSH 会直接判定启动失败。
+   *
+   * 嵌套 ctx.inject 只让这个子作用域等待，主插件照常激活：
+   * K 线、预测、大盘、消息面都不依赖模型，只有解读/修正需要。
+   */
+  ctx.inject(['llm'], (llmCtx) => {
+    server.insight.ctx = llmCtx
+    server.insight.modelCache = null
+    server.insight.modelCacheAt = 0
+  })
+
   ctx.inject(['connection'], (scoped) => {
-    // llm 是注入依赖：原始 ctx 上拿不到，必须用注入后的 scoped ctx 重建解读服务
-    if (server.insight && typeof server.insight === 'object' && 'ctx' in server.insight) {
-      server.insight.ctx = scoped
-      server.insight.modelCache = null
-    }
     const connection = scoped.get('connection')
     const register = connection?.fetch?.register?.bind(connection.fetch)
     if (typeof register !== 'function') {

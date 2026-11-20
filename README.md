@@ -469,7 +469,7 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.7.1`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.7.2`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |

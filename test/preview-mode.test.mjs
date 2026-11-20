@@ -31,8 +31,9 @@ test('换周期会清掉旧周期的预测', () => {
 })
 
 test('心跳只在「实时跟随开启 + 出现新 bar」时才重算', () => {
-  const block = /if \(autoRefresh && newBar && !runningRef\.current/.exec(panel)
-  assert.ok(block, '重算条件必须是 autoRefresh && newBar')
+  // 现在通过 ref 读开关（依赖数组里放易变状态会让定时器被反复重建）
+  const block = /if \(autoRefreshRef\.current && newBar && !runningRef\.current/.exec(panel)
+  assert.ok(block, '重算条件必须是 autoRefreshRef.current && newBar')
   // 不能因为换了股票/周期就顺手重算
   assert.equal(/if \(autoRefresh && \(newBar \|\| stale\)/.test(panel), false)
 })

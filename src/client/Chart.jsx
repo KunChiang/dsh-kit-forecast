@@ -55,7 +55,11 @@ function fmtVolume(value) {
   return value.toFixed(0)
 }
 
-export function ForecastChart({ data, height = 320, overlays = null, livePrice = null, liveCandle = null }) {
+export function ForecastChart({
+  data, height = 320, overlays = null, livePrice = null, liveCandle = null,
+  // 预测发出后真实走出来的 bar（按时间戳对齐到预测窗口上）
+  realizedBars = null,
+}) {
   const canvasRef = React.useRef(null)
   const wrapRef = React.useRef(null)
   const [hover, setHover] = React.useState(null)
@@ -99,7 +103,15 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     const nPred = median.length
     // nPred 可以是 0：那是「只画行情、还没预测」的预览态
     if (nHist === 0) return
-    const labels = [...hist.map((b) => b.t), ...median.map((b) => b.t)]
+    // 预测窗口的时间轴优先用 futureTimestamps（与 K 线同一套时钟）
+    const predTimes = (data.futureTimestamps?.length === nPred)
+      ? data.futureTimestamps
+      : median.map((bar) => bar.t)
+    // 预判发出后已经走出来的真实 K 线：按时间戳贴到预测窗口的格子上，
+    // 这样图表会随着行情推进一根根长出来，而不是冻结在预测那一刻。
+    const realizedByTime = new Map()
+    for (const bar of realizedBars ?? []) realizedByTime.set(bar.t, bar)
+    const labels = [...hist.map((b) => b.t), ...predTimes]
     const total = nHist + nPred
 
     // ---- 视窗换算 --------------------------------------------------------
@@ -137,6 +149,8 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       const hi = data.bands?.high?.q95?.[i]
       if (Number.isFinite(lo)) lows.push(lo)
       if (Number.isFinite(hi)) highs.push(hi)
+      const real = realizedByTime.get(predTimes[i])
+      if (real) { lows.push(real.l); highs.push(real.h) }
     }
     for (const overlay of overlays ?? []) {
       for (const point of overlay.points ?? []) {
@@ -211,8 +225,8 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     // 完整一天（240 根）在常规窗口宽度下约 2.8px/根，仍然画蜡烛。
     const dense = step < 2.2
 
-    const drawCandle = (index, bar, color, alpha = 1) => {
-      const x = xOf(index)
+    const drawCandle = (index, bar, color, alpha = 1, dx = 0, widthScale = 1) => {
+      const x = xOf(index) + dx
       ctx.globalAlpha = alpha
       ctx.strokeStyle = color
       ctx.fillStyle = color
@@ -222,7 +236,8 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       ctx.stroke()
       const top = yOf(Math.max(bar.o, bar.c))
       const bottom = yOf(Math.min(bar.o, bar.c))
-      ctx.fillRect(x - candleW / 2, top, candleW, Math.max(1, bottom - top))
+      const w = Math.max(1, candleW * widthScale)
+      ctx.fillRect(x - w / 2, top, w, Math.max(1, bottom - top))
       ctx.globalAlpha = 1
     }
 
@@ -245,10 +260,24 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
         drawCandle(i, bar, bar.c >= bar.o ? UP : DOWN, 0.45)
       })
     }
+    // 有真实 bar 时，预测蜡烛缩窄左移、真实蜡烛右移，两个并排才看得出差异
+    const paired = realizedByTime.size > 0 && candleW >= 3
+    const pairOffset = paired ? candleW * 0.26 : 0
     median.forEach((bar, i) => {
       if (!inView(nHist + i)) return
-      drawCandle(nHist + i, bar, bar.c >= bar.o ? PRED : '#8b5cf6', 0.9)
+      drawCandle(nHist + i, bar, bar.c >= bar.o ? PRED : '#8b5cf6', 0.9,
+        paired ? -pairOffset : 0, paired ? 0.62 : 1)
     })
+
+    // 已实现的真实 K 线
+    if (realizedByTime.size > 0) {
+      for (let i = 0; i < nPred; i += 1) {
+        const real = realizedByTime.get(predTimes[i])
+        if (!real || !inView(nHist + i)) continue
+        drawCandle(nHist + i, real, real.c >= real.o ? UP : DOWN, 0.95,
+          paired ? pairOffset : 0, paired ? 0.62 : 0.9)
+      }
+    }
 
     // ---- 中位收盘虚线 ----------------------------------------------------
     if (close) {
@@ -408,9 +437,13 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
     })
     ;(data.bands?.volume?.q50 ?? []).forEach((v, i) => {
       if (!inView(nHist + i)) return
+      const real = realizedByTime.get(predTimes[i])
       const x = xOf(nHist + i)
-      const hgt = (v / vMax) * volH
-      ctx.fillStyle = 'rgba(59,130,246,0.55)'
+      const value = real ? real.v : v
+      const hgt = (value / vMax) * volH
+      ctx.fillStyle = real
+        ? (real.c >= real.o ? 'rgba(224,74,74,0.5)' : 'rgba(34,160,107,0.5)')
+        : 'rgba(59,130,246,0.55)'
       ctx.fillRect(x - vBarW / 2, volTop + volH - hgt, vBarW, hgt)
     })
 
@@ -449,7 +482,7 @@ export function ForecastChart({ data, height = 320, overlays = null, livePrice =
       }
     }
     // 注意：livePrice / overlays / liveCandle / view 都必须进依赖，否则画布不重绘
-  }, [data, height, hover, hoverPos, overlays, livePrice, liveCandle, view])
+  }, [data, height, hover, hoverPos, overlays, livePrice, liveCandle, realizedBars, view])
 
   React.useEffect(() => {
     draw()

@@ -117,13 +117,20 @@ export function KitForecastPanel({ ctx }) {
 
   const abortRef = React.useRef(null)
   const runningRef = React.useRef(false)
+  const resultRef = React.useRef(null)
+  const loadPreviewRef = React.useRef(null)
+  const autoRefreshRef = React.useRef(false)
   const startedRef = React.useRef(0)
   const saveTimerRef = React.useRef(null)
   // 联想请求的令牌：只接受最后一次输入的结果
   const searchTokenRef = React.useRef(0)
+  // 行情预览已经加载到哪一根（心跳据此判断要不要重载）
+  const previewAsOfRef = React.useRef('')
 
   const running = phase === 'running'
   runningRef.current = running
+  resultRef.current = result
+  autoRefreshRef.current = autoRefresh
 
   // 「这份预测结果是不是当前这一只、这个周期」——多处 effect 与渲染都依赖它，
   // 必须声明在所有 effect 之前（const 在模块/函数体里是 TDZ，用时未初始化会直接报错）。
@@ -146,13 +153,17 @@ export function KitForecastPanel({ ctx }) {
   const loadPreview = React.useCallback(async (code, scale) => {
     try {
       const data = await fetchBars(code, scale, 400)
-      setPreviewBars({ code: data.code, scale, bars: data.bars ?? [], source: data.source })
+      const bars = data.bars ?? []
+      previewAsOfRef.current = bars.at(-1)?.t ?? ''
+      setPreviewBars({ code: data.code, scale, bars, source: data.source })
       return data
     } catch {
       setPreviewBars(null)
       return null
     }
   }, [])
+  // 心跳闭包里要用最新的 loadPreview（它自己依赖稳定，但显式持有更清楚）
+  loadPreviewRef.current = loadPreview
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -469,7 +480,8 @@ export function KitForecastPanel({ ctx }) {
     if (!code) return undefined
     // 行情刷新频率：盘中 15–20 秒（保证价格是活的），休市降到 5 分钟（价格不会变）
     const open = inTradingSession()
-    const quoteInterval = !open ? 300000 : (scale === '1m' || scale === '5m' ? 15000 : 20000)
+    // 盘中：短周期 10 秒、长周期 15 秒；休市 2 分钟（价格不会变，但保持轻量探测）
+    const quoteInterval = !open ? 120000 : (scale === '1m' || scale === '5m' ? 10000 : 15000)
     let cancelled = false
 
     const beat = async () => {
@@ -482,10 +494,22 @@ export function KitForecastPanel({ ctx }) {
         if (data?.quote) setLiveQuote({ ...data.quote, code })
         setLiveCandle(data?.forming ?? null)
         if (data?.asOf) setLatestBar(data.asOf)
+
+        // 预览态（没有预测结果）下，图上的 K 线只在选股/换周期时加载过一次，
+        // 之后即使有新 bar 收盘也不会追加，看起来就像「行情不刷新」。
+        // 这里检测到新的收盘 bar 就重载一次行情（只请求 bars，很轻）。
+        if (data?.asOf && data.asOf !== previewAsOfRef.current) {
+          previewAsOfRef.current = data.asOf
+          // 无论有没有预测结果都重载行情：
+          //   预览态 → 图上的 K 线要跟着长；
+          //   预测态 → 需要这些真实 bar 贴到预测窗口上做对照。
+          loadPreviewRef.current?.(code, scale)
+        }
         // B. 默认不动模型。只有用户显式打开「实时跟随」、且出现新的收盘 bar 时才重算。
         const latest = data?.asOf
-        const newBar = latest && result?.asOf && latest !== result.asOf
-        if (autoRefresh && newBar && !runningRef.current && lastRunAnchorRef.current !== latest) {
+        const prevResult = resultRef.current
+        const newBar = Boolean(latest && prevResult?.asOf && latest !== prevResult.asOf)
+        if (autoRefreshRef.current && newBar && !runningRef.current && lastRunAnchorRef.current !== latest) {
           lastRunAnchorRef.current = latest
           runRef.current({ silent: true })
         }
@@ -497,15 +521,23 @@ export function KitForecastPanel({ ctx }) {
     const onVisible = () => {
       if (document.visibilityState === 'visible') beat()
     }
+    // 从后台切回来、或窗口重新获得焦点时立刻补一次，
+    // 不用等下一个间隔（这也是「看起来要手动刷新」的常见来源）
+    const onFocus = () => beat()
     document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onFocus)
     beat()
     const id = setInterval(beat, quoteInterval)
     return () => {
       cancelled = true
       clearInterval(id)
       document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onFocus)
     }
-  }, [autoRefresh, hydrated, scale, selected?.code, result?.code, result?.scale, result?.asOf])
+    // 依赖里刻意不放 result?.asOf / latestBar 这类「每次 tick 都会变」的状态：
+    // 否则定时器会被不断重建，节奏被打乱（实测 40 秒只发了 2 次心跳）。
+    // 需要的最新值一律从 ref 读。
+  }, [autoRefresh, hydrated, scale, selected?.code, result?.code])
 
   // 周期/参数变化时记住偏好
   React.useEffect(() => {
@@ -615,6 +647,18 @@ export function KitForecastPanel({ ctx }) {
       source: previewBars.source,
     }
   }, [previewBars])
+
+  // 预测 anchor 之后已经真实走出来的 bar（用于贴在预测窗口上对照）
+  const realizedBars = React.useMemo(() => {
+    if (!resultMatches || !previewBars) return null
+    const bars = previewBars.bars ?? []
+    const anchor = result?.asOf
+    if (!anchor) return null
+    return bars.filter((bar) => bar.t > anchor)
+  }, [resultMatches, previewBars, result?.asOf])
+
+  // 真实的最新一根（用于「最新已收盘」标签，预测态下也要往前走）
+  const latestRealized = realizedBars?.length ? realizedBars.at(-1).t : null
 
   // 显示用数据：只有结果属于当前目标时才用它，否则退回行情预览。
   // 之前是 `result ?? previewData`，换股票后旧结果优先级更高，图表就卡住不动了。
@@ -888,7 +932,7 @@ export function KitForecastPanel({ ctx }) {
           <div className="kfc-quoteSpacer" />
           {chartData && (
             <div className="kfc-quoteMeta">
-              <span>{t('lastBar')} {chartData.asOf}</span>
+              <span>{t('lastBar')} {latestRealized ?? chartData.asOf}</span>
               {chartData.Lh > 0 ? <span>{t('horizon')} {chartData.Lh} 根</span> : null}
               {chartData.source ? <span className="kfc-chip">{chartData.source}</span> : null}
               {chartData.adjustmentApplied ? <span className="kfc-chip">{t('adj')}</span> : null}
@@ -971,6 +1015,7 @@ export function KitForecastPanel({ ctx }) {
               overlays={comparePast ? overlays : null}
               livePrice={Number.isFinite(quote?.price) ? quote.price : null}
               liveCandle={liveCandle}
+              realizedBars={realizedBars}
             />
             {isPreview ? (
               <div className="kfc-previewBar">

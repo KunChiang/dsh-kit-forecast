@@ -15,14 +15,17 @@ test('draw 的依赖数组覆盖所有影响绘制的 prop', () => {
   const match = /const draw = React\.useCallback\(\(\) => \{[\s\S]*?\n  \}, \[([^\]]+)\]\)/.exec(chart)
   assert.ok(match, '应能找到 draw 的 useCallback 依赖数组')
   const deps = match[1].split(',').map((item) => item.trim()).filter(Boolean)
-  for (const prop of ['data', 'height', 'overlays', 'livePrice', 'liveCandle']) {
+  for (const prop of ['data', 'height', 'overlays', 'livePrice', 'liveCandle', 'realizedBars']) {
     assert.ok(deps.includes(prop), `依赖数组缺少 ${prop}：画布不会因它变化而重绘`)
   }
 })
 
 test('组件的解构参数与依赖数组一致', () => {
   const props = /export function ForecastChart\(\{([^}]+)\}\)/.exec(chart)[1]
-    .split(',').map((item) => item.split('=')[0].trim()).filter(Boolean)
+    .replace(/\/\/[^\n]*/g, '')           // 去掉行内注释
+    .split(',')
+    .map((item) => item.split('=')[0].trim())
+    .filter((name) => /^[A-Za-z_$][\w$]*$/.test(name))
   const match = /const draw = React\.useCallback\(\(\) => \{[\s\S]*?\n  \}, \[([^\]]+)\]\)/.exec(chart)
   const deps = match[1].split(',').map((item) => item.trim())
   for (const prop of props) {

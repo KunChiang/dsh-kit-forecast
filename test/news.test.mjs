@@ -46,7 +46,7 @@ test('/news 路由：两路都成功时返回公告与新闻', async () => {
     assert.equal(data.code, '600519.SH', '代码应被归一化')
     assert.equal(data.announcements.length, 1)
     assert.equal(data.news.length, 1)
-    assert.deepEqual(data.received, { notices: 5, newsLimit: 6 })
+    assert.deepEqual(data.received, { notices: 5, newsLimit: 6, force: false })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

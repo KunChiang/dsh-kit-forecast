@@ -18,6 +18,17 @@ const NEWS_API = 'https://np-listapi.eastmoney.com/comm/web/getListInfo'
 const NOTICE_TTL_MS = 10 * 60 * 1000
 const NEWS_TTL_MS = 3 * 60 * 1000
 
+/**
+ * 主动刷新（force）的最小间隔。
+ *
+ * 这些接口没有公开文档、也没有官方配额说明，密集请求有被限流/临时封 IP 的风险
+ * （东财通常按 IP 做频率与并发限制，返回空数据或 403）。
+ * 所以对「用户点刷新」也设一个下限，避免手快连点把 IP 打上去。
+ */
+const MIN_FORCE_INTERVAL_MS = 20 * 1000
+/** 连续失败后的冷却时间，逐次翻倍，最多 5 分钟。 */
+const MAX_COOLDOWN_MS = 5 * 60 * 1000
+
 /** 公告详情页：东财的公告正文页，带 art_code 即可直达。 */
 function noticeUrl(artCode) {
   return `https://data.eastmoney.com/notices/detail/${artCode}.html`
@@ -68,6 +79,45 @@ export class NewsFeed {
   constructor({ logger = console } = {}) {
     this.logger = logger
     this.cache = new Map()
+    // 每路（news / ann）最近一次真正发请求的时间与连续失败次数
+    this.lastFetch = { news: 0, ann: 0 }
+    this.failures = { news: 0, ann: 0 }
+    this.cooldownUntil = { news: 0, ann: 0 }
+  }
+
+  /** 是否还在冷却中；返回剩余毫秒数（0 表示可以请求）。 */
+  cooldownRemaining(lane) {
+    return Math.max(0, this.cooldownUntil[lane] - Date.now())
+  }
+
+  /** 记录一次成功/失败，维护冷却窗口。 */
+  markResult(lane, ok) {
+    if (ok) {
+      this.failures[lane] = 0
+      this.cooldownUntil[lane] = 0
+      return
+    }
+    this.failures[lane] += 1
+    const backoff = Math.min(MAX_COOLDOWN_MS, 15000 * 2 ** (this.failures[lane] - 1))
+    this.cooldownUntil[lane] = Date.now() + backoff
+  }
+
+  /**
+   * 主动刷新时判断还能不能发请求。
+   *
+   * 返回 { ok, waitMs }：
+   *   - 冷却中（连续失败）→ 不允许，返回剩余等待时间
+   *   - 距离上次请求不足最小间隔 → 也不允许（保护 IP），但调用方应回落到缓存，
+   *     而不是把「点刷新没反应」变成一条报错。
+   */
+  guardForce(lane) {
+    const cooling = this.cooldownRemaining(lane)
+    if (cooling > 0) return { ok: false, waitMs: cooling, reason: 'cooling' }
+    const since = Date.now() - this.lastFetch[lane]
+    if (since < MIN_FORCE_INTERVAL_MS) {
+      return { ok: false, waitMs: MIN_FORCE_INTERVAL_MS - since, reason: 'interval' }
+    }
+    return { ok: true, waitMs: 0, reason: null }
   }
 
   cached(key, ttl) {
@@ -82,17 +132,35 @@ export class NewsFeed {
   }
 
   /** 公告列表。limit 为条数上限。 */
-  async announcements(code, { limit = 12 } = {}) {
+  async announcements(code, { limit = 12, force = false } = {}) {
     const [digits, market] = String(code).split('.')
     const key = `ann|${code}|${limit}`
-    const hit = this.cached(key, NOTICE_TTL_MS)
-    if (hit) return hit
+    if (force) {
+      const gate = this.guardForce('ann')
+      if (!gate.ok) {
+        // 冷却中：如果手上还有数据就先给旧的，别让面板空掉
+        const stale = this.cached(key, 24 * 60 * 60 * 1000)
+        if (stale) return { ...stale, throttled: gate.waitMs }
+        if (gate.reason === 'cooling') throw new Error(`请求过于频繁，请 ${Math.ceil(gate.waitMs / 1000)} 秒后再试`)
+      }
+    } else {
+      const hit = this.cached(key, NOTICE_TTL_MS)
+      if (hit) return hit
+    }
+    this.lastFetch.ann = Date.now()
 
     const url = `${NOTICE_API}?sr=-1&page_size=${limit}&page_index=1&ann_type=A`
       + `&client_source=web&stock_list=${encodeURIComponent(digits)}`
       + `&f_node=0&s_node=0`
 
-    const raw = await fetchJson(url, { referer: 'https://data.eastmoney.com/' })
+    let raw
+    try {
+      raw = await fetchJson(url, { referer: 'https://data.eastmoney.com/' })
+      this.markResult('ann', true)
+    } catch (error) {
+      this.markResult('ann', false)
+      throw error
+    }
     const list = raw?.data?.list ?? []
     const items = list.map((row) => ({
       id: row.art_code,
@@ -109,17 +177,34 @@ export class NewsFeed {
   }
 
   /** 个股相关新闻。 */
-  async news(code, { limit = 12 } = {}) {
+  async news(code, { limit = 12, force = false } = {}) {
     const [digits, market] = String(code).split('.')
     const key = `news|${code}|${limit}`
-    const hit = this.cached(key, NEWS_TTL_MS)
-    if (hit) return hit
+    if (force) {
+      const gate = this.guardForce('news')
+      if (!gate.ok) {
+        const stale = this.cached(key, 24 * 60 * 60 * 1000)
+        if (stale) return { ...stale, throttled: gate.waitMs }
+        if (gate.reason === 'cooling') throw new Error(`请求过于频繁，请 ${Math.ceil(gate.waitMs / 1000)} 秒后再试`)
+      }
+    } else {
+      const hit = this.cached(key, NEWS_TTL_MS)
+      if (hit) return hit
+    }
+    this.lastFetch.news = Date.now()
 
     const mTypeAndCode = `${marketCodeOf(market)}.${digits}`
     const url = `${NEWS_API}?client=web&biz=web_news_col&mTypeAndCode=${mTypeAndCode}`
       + `&type=1&page_index=1&page_size=${limit}&req_trace=${Date.now()}`
 
-    const raw = await fetchJson(url)
+    let raw
+    try {
+      raw = await fetchJson(url)
+      this.markResult('news', true)
+    } catch (error) {
+      this.markResult('news', false)
+      throw error
+    }
     const list = raw?.data?.list ?? []
     const items = list.map((row) => ({
       id: row.Art_Code,
@@ -136,14 +221,14 @@ export class NewsFeed {
    * 合并接口：公告 + 新闻一起给，任何一路失败都不影响另一路。
    * 返回 { announcements, news, errors }，errors 只用于前端提示。
    */
-  async digest(code, { notices = 10, newsLimit = 10 } = {}) {
+  async digest(code, { notices = 10, newsLimit = 10, force = false } = {}) {
     const errors = []
     const [ann, news] = await Promise.all([
-      this.announcements(code, { limit: notices }).catch((error) => {
+      this.announcements(code, { limit: notices, force }).catch((error) => {
         errors.push(`公告：${error.message}`)
         return null
       }),
-      this.news(code, { limit: newsLimit }).catch((error) => {
+      this.news(code, { limit: newsLimit, force }).catch((error) => {
         errors.push(`新闻：${error.message}`)
         return null
       }),
@@ -154,6 +239,10 @@ export class NewsFeed {
       news: news?.items ?? [],
       errors,
       fetchedAt: Date.now(),
+      // 两路都在冷却时前端可以据此显示倒计时
+      cooldown: Math.max(this.cooldownRemaining('ann'), this.cooldownRemaining('news')),
+      // 本次是「因为太快而回落到缓存」时带上剩余秒数，前端提示「刚刷新过」
+      throttled: Math.max(ann?.throttled ?? 0, news?.throttled ?? 0),
     }
   }
 

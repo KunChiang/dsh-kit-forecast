@@ -742,7 +742,20 @@ export const STYLES = `
 .kfc-staleBar button { padding: 3px 10px; }
 
 /* 预测进度覆盖层 ------------------------------------------------------- */
-.kfc-canvasArea { position: relative; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.kfc-canvasArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 关键：flex 子项默认 min-height:auto 会让容器塌陷，而结果面板比容器高，
+     溢出部分就压在下面的 AI 解读面板上、挡住它的按钮（点不到）。
+     这里让容器高度由内容撑开。 */
+  min-height: auto;
+  isolation: isolate;
+}
+.kfc-canvasArea > .kfc-resultPane,
+.kfc-canvasArea > .kfc-empty,
+.kfc-canvasArea > .kfc-previewBar { flex: none; }
 
 .kfc-overlay {
   position: absolute;
@@ -948,6 +961,8 @@ export const STYLES = `
   color: var(--dsw-alias-brand-primary);
   background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
 }
+.kfc-newsRefresh { padding: 2px 9px; font-size: 11px; }
+.kfc-newsRefresh:disabled { opacity: .55; cursor: default; }
 .kfc-newsLoading, .kfc-newsError {
   margin-left: auto;
   font-size: 11px;
@@ -1007,4 +1022,166 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   color: var(--dsw-alias-label-secondary);
   text-align: center;
 }
+
+/* 大盘概览 ------------------------------------------------------------- */
+.kfc-market {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* 左右负边距抵消第一个/最后一个指数块的内边距，文字与搜索框对齐 */
+  padding: 0 10px 9px;
+}
+.kfc-marketRow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.kfc-marketRow::-webkit-scrollbar { display: none; }
+.kfc-index {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.kfc-index:hover { background: var(--dsw-alias-bg-layer-1); }
+.kfc-index.active {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent);
+}
+.kfc-indexName {
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 14px;
+  white-space: nowrap;
+}
+.kfc-indexPrice {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
+}
+.kfc-indexChg {
+  font-size: 10.5px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-index.up .kfc-indexPrice, .kfc-index.up .kfc-indexChg { color: var(--dsw-alias-state-danger-primary); }
+.kfc-index.down .kfc-indexPrice, .kfc-index.down .kfc-indexChg { color: var(--dsw-alias-state-success-primary); }
+.kfc-marketLoading {
+  align-self: center;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  padding: 0 8px;
+}
+
+.kfc-breadth {
+  flex: none;
+  width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kfc-breadthBar {
+  display: flex;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.kfc-breadthBar i { display: block; height: 100%; }
+.kfc-breadthBar .up { background: var(--dsw-alias-state-danger-primary); }
+.kfc-breadthBar .down { background: var(--dsw-alias-state-success-primary); }
+.kfc-breadthBar .flat { background: var(--dsw-alias-label-secondary); opacity: .4; }
+.kfc-breadthText {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-breadthText .up { color: var(--dsw-alias-state-danger-primary); }
+.kfc-breadthText .down { color: var(--dsw-alias-state-success-primary); }
+
+/* AI 解读 -------------------------------------------------------------- */
+.kfc-insight {
+  flex: none;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+.kfc-insight.running { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); }
+.kfc-insightBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.kfc-insightTitle {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  letter-spacing: .04em;
+}
+.kfc-insightModel {
+  max-width: 220px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kfc-insightSpacer { flex: 1; }
+.kfc-insightRun { padding: 4px 14px; }
+.kfc-insightText {
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.72;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 340px;
+  overflow: auto;
+  color: var(--dsw-alias-label-primary);
+}
+.kfc-insightHint {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-insightError {
+  margin: 10px 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent);
+  color: var(--dsw-alias-state-warn-primary);
+  font-size: 11.5px;
+}
+.kfc-caret {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--dsw-alias-brand-primary);
+  animation: kfc-blink 1s steps(2) infinite;
+}
+@keyframes kfc-blink { 50% { opacity: 0 } }
 `

@@ -40,9 +40,14 @@ export function fetchTick(code, scale) {
   return postJson('/tick', { code, scale })
 }
 
+/** 大盘概览：主要指数报价 + 涨跌家数。 */
+export function fetchMarket() {
+  return postJson('/market', {})
+}
+
 /** 公告 + 新闻。任何一路失败都不影响另一路。 */
-export function fetchNews(code, notices = 10, news = 10) {
-  return postJson('/news', { code, notices, news })
+export function fetchNews(code, notices = 10, news = 10, { force = false } = {}) {
+  return postJson('/news', { code, notices, news, force })
 }
 
 /** 取历史预测与真实走势的对比数据（不给 asOf 则不过滤当前 anchor）。 */
@@ -117,6 +122,14 @@ async function consume(path, body, { signal, onEvent }) {
   } catch {
     // 已经关闭
   }
+}
+
+/**
+ * AI 解读：SSE 流式。
+ * payload 可带 { code, scale, market, stock, forecast, news }
+ */
+export function runInsight(payload, options) {
+  return consume('/insight', payload, options)
 }
 
 export function runForecast(payload, options) {

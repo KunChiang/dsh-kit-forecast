@@ -24,7 +24,8 @@ function shortDate(text, now = Date.now()) {
   return date.slice(5)
 }
 
-export function NewsPanel({ data, loading, error, tab, onTab, t, now }) {
+export function NewsPanel({ data, loading, error, tab, onTab, onRefresh, cooldown, t, now }) {
+  const cooling = (cooldown ?? 0) > 0
   const announcements = data?.announcements ?? []
   const news = data?.news ?? []
   const items = tab === 'news' ? news : announcements
@@ -44,7 +45,15 @@ export function NewsPanel({ data, loading, error, tab, onTab, t, now }) {
         onClick: () => onTab('news'),
       }, `${t('newsItems')} ${news.length || ''}`.trim()),
       loading ? h('span', { className: 'kfc-newsLoading' }, t('newsLoading')) : null,
-      error ? h('span', { className: 'kfc-newsError', title: error }, t('newsFailed')) : null),
+      error ? h('span', { className: 'kfc-newsError', title: error }, t('newsFailed')) : null,
+      h('span', { className: 'kfc-insightSpacer' }),
+      h('button', {
+        type: 'button',
+        className: 'kfc-ghost kfc-newsRefresh',
+        disabled: loading || cooling,
+        title: cooling ? t('newsCooling') : t('newsRefreshHint'),
+        onClick: onRefresh,
+      }, cooling ? `${Math.ceil(cooldown / 1000)}s` : t('newsRefresh'))),
 
     items.length === 0
       ? h('div', { className: 'kfc-newsEmpty' }, loading ? t('newsLoading') : t('newsEmpty'))

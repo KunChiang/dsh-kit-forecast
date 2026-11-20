@@ -21,6 +21,7 @@ const TX_QUOTE = 'https://qt.gtimg.cn/q='
 const TX_DAY = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param='
 const SINA_SUGGEST = 'https://suggest3.sinajs.cn/suggest/type=11,12,13,14,15&key='
 const EM_KLINE = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
+const EM_ULIST = 'https://push2.eastmoney.com/api/qt/ulist.np/get'
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36'
 
@@ -98,6 +99,32 @@ async function httpText(url, { timeout = 12000, headers = {}, retries = 2 } = {}
 // 代码归一化
 // ---------------------------------------------------------------------------
 
+/**
+ * A 股主要指数。
+ *
+ * 指数代码和个股会撞号（000001 既是上证指数也是平安银行），所以内部一律带交易所后缀，
+ * 并且在解析时优先按「指数表」匹配，避免 000001 被推断成深市股票。
+ */
+export const INDEXES = [
+  { code: '000001.SH', name: '上证指数', short: '上证', group: '综合' },
+  { code: '399001.SZ', name: '深证成指', short: '深成', group: '综合' },
+  { code: '399006.SZ', name: '创业板指', short: '创业板', group: '成长' },
+  { code: '000688.SH', name: '科创50', short: '科创50', group: '成长' },
+  { code: '000300.SH', name: '沪深300', short: '沪深300', group: '宽基' },
+  { code: '000905.SH', name: '中证500', short: '中证500', group: '宽基' },
+  { code: '000852.SH', name: '中证1000', short: '中证1000', group: '宽基' },
+  { code: '899050.BJ', name: '北证50', short: '北证50', group: '北交所' },
+]
+
+const INDEX_BY_CODE = new Map(INDEXES.map((item) => [item.code, item]))
+/** 指数没有涨跌停、也不需要复权。 */
+export function isIndex(code) {
+  return INDEX_BY_CODE.has(String(code ?? '').toUpperCase())
+}
+export function indexMeta(code) {
+  return INDEX_BY_CODE.get(String(code ?? '').toUpperCase()) ?? null
+}
+
 const MARKET_OF_PREFIX = [
   [/^(60|68|69|50|51|52|56|58|11|90)/, 'SH'],
   [/^(00|30|31|12|15|16|18|20)/, 'SZ'],
@@ -117,6 +144,12 @@ export function normalizeCode(input) {
 
   let market = null
   let digits = null
+
+  // 指数：必须带后缀才认得出来（000001.SH 上证 vs 000001.SZ 平安银行）
+  if (INDEX_BY_CODE.has(upper)) {
+    const [d, mk] = upper.split('.')
+    return { code: upper, symbol: `${mk.toLowerCase()}${d}`, digits: d, market: mk, isIndex: true }
+  }
 
   let m = /^(\d{6})\.(SH|SZ|BJ)$/.exec(upper)
   if (m) {
@@ -153,6 +186,7 @@ export class MarketData {
     this.adjustCache = new Map()
     this.dayCache = new Map()
     this.tradingDayCache = { at: 0, days: [] }
+    this.breadthCache = null
   }
 
   async search(keyword) {
@@ -216,6 +250,62 @@ export class MarketData {
     }
     if (!value) throw new Error(`${norm.code} 实时行情不可用（腾讯/新浪均失败）`)
     this.quoteCache.set(norm.code, { at: Date.now(), value })
+    return value
+  }
+
+  /**
+   * 批量行情：一次网络请求取多只（大盘概览用）。
+   * 腾讯接口支持逗号分隔，比逐个 quote 快一个数量级。
+   */
+  async quotes(codes) {
+    const norms = codes.map((code) => normalizeCode(code)).filter(Boolean)
+    if (norms.length === 0) return []
+    const key = `multi|${norms.map((n) => n.code).join(',')}`
+    const hit = this.quoteCache.get(key)
+    if (hit && Date.now() - hit.at < 2500) return hit.value
+
+    const url = `${TX_QUOTE}${norms.map((n) => n.symbol).join(',')}`
+    const { text } = await httpText(url, { timeout: 9000 })
+    const out = []
+    // 返回形如 v_sh000001="...";v_sz399001="...";
+    const re = /v_([a-z]{2}\d{6})="([^"]*)"/g
+    let m
+    while ((m = re.exec(text)) !== null) {
+      const symbol = m[1]
+      const norm = norms.find((n) => n.symbol === symbol)
+      if (!norm) continue
+      const parsed = parseTencentQuote(`v_${symbol}="${m[2]}"`, norm)
+      if (parsed) out.push(parsed)
+    }
+    this.quoteCache.set(key, { at: Date.now(), value: out })
+    return out
+  }
+
+  /**
+   * 市场宽度：涨跌家数 + 成交额。
+   *
+   * 用东财的 ulist 接口，直接返回每个指数的上涨/下跌/平盘家数（f104/f105/f106），
+   * 比自己统计 5000 多只个股便宜得多。
+   */
+  async breadth() {
+    const hit = this.breadthCache
+    if (hit && Date.now() - hit.at < 30 * 1000) return hit.value
+
+    const secids = '1.000001,0.399001'
+    const fields = 'f2,f3,f4,f12,f14,f104,f105,f106,f124'
+    const { text } = await httpText(`${EM_ULIST}?fltt=2&secids=${secids}&fields=${fields}`, {
+      timeout: 9000,
+      headers: { referer: 'https://quote.eastmoney.com/' },
+    })
+    const diff = JSON.parse(text)?.data?.diff ?? []
+    const value = diff.map((row) => ({
+      code: row.f12 === '000001' ? '000001.SH' : '399001.SZ',
+      up: Number(row.f104) || 0,
+      down: Number(row.f105) || 0,
+      flat: Number(row.f106) || 0,
+      at: Number(row.f124) ? Number(row.f124) * 1000 : Date.now(),
+    }))
+    this.breadthCache = { at: Date.now(), value }
     return value
   }
 
@@ -357,7 +447,8 @@ export class MarketData {
       .sort((a, b) => (a.t < b.t ? -1 : 1))
 
     let adjustmentApplied = false
-    if (scale !== '1d' && bars.length > 0) {
+    // 指数没有除权，跳过复权因子（也省两次请求）
+    if (scale !== '1d' && bars.length > 0 && !isIndex(norm.code)) {
       const map = await this.adjustment(norm.code).catch(() => new Map())
       if (map.size > 0) {
         const dates = [...map.keys()].sort()
@@ -388,7 +479,10 @@ export class MarketData {
     // 正在形成的那根（尚未收盘）单独留着：tick 会把它画成动态蜡烛
     const forming = dropped ? bars[bars.length - 1] : null
     const value = {
-      code: norm.code, symbol: norm.symbol, scale,
+      code: norm.code,
+      name: indexMeta(norm.code)?.name,
+      isIndex: isIndex(norm.code),
+      symbol: norm.symbol, scale,
       bars: completed, forming, source, adjustmentApplied, droppedForming: dropped,
     }
     this.barsCache.set(cacheKey, { at: Date.now(), value })

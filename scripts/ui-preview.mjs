@@ -89,9 +89,26 @@ const ctx = {
   on: () => {},
   inject: (deps, run) => run({
     ...ctx,
-    get: (n) => (n === 'connection' ? {
-      fetch: { register: (spec) => { routes.set(`${spec.path}`, spec.fetch); return () => {} } },
-    } : undefined),
+    get: (n) => {
+      if (n === 'connection') {
+        return { fetch: { register: (spec) => { routes.set(`${spec.path}`, spec.fetch); return () => {} } } }
+      }
+      if (n === 'agentDefaultModel') return { currentSelection: () => null }
+      return undefined
+    },
+    // 预览用的假模型：验证「AI 解读」的流式链路（真实部署里由 DSH 注入 ctx.llm）
+    llm: {
+      listProviders: () => [{ id: 'preview', name: 'Preview' }],
+      listModels: async () => [{ id: 'preview-model', name: 'preview-model' }],
+      stream: () => (async function* () {
+        const text = '【预览】这是一段由假模型生成的解读示例。\n1. 大盘普跌，上证 -1.23%、创业板 -3.54%。\n2. 个股预测中位 -0.81%，上涨概率 25%。\n3. 风险点：量能萎缩下的继续调整。'
+        for (const ch of text) {
+          await new Promise((r) => setTimeout(r, 4))
+          yield { type: 'text-delta', text: ch }
+        }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })(),
+    },
     logger,
   }),
 }

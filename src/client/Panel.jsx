@@ -1,7 +1,9 @@
 import React from 'react'
-import { fetchBars, fetchHistory, fetchNews, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runSetup, searchStocks } from './api.js'
+import { fetchBars, fetchHistory, fetchMarket, fetchNews, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runInsight, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { ProgressOverlay } from './ProgressOverlay.jsx'
+import { InsightPanel } from './InsightPanel.jsx'
+import { MarketBar } from './MarketBar.jsx'
 import { NewsPanel } from './NewsPanel.jsx'
 import { Select } from './Select.jsx'
 import { NS } from './i18n.js'
@@ -116,6 +118,27 @@ export function KitForecastPanel({ ctx }) {
   const [notice, setNotice] = React.useState('')
   const [elapsed, setElapsed] = React.useState(0)
   const [now, setNow] = React.useState(Date.now())
+  const [tickAt, setTickAt] = React.useState(0)
+  const [tickState, setTickState] = React.useState('idle') // idle | ok | fail
+  // 心跳拿到的实时盘口：独立于预测结果，盘中每分钟都会更新
+  const [liveQuote, setLiveQuote] = React.useState(null)
+  // 未收盘那根 K 线：用于图上画一根会长的动态蜡烛
+  const [liveCandle, setLiveCandle] = React.useState(null)
+  // 公告 / 新闻
+  const [news, setNews] = React.useState(null)
+  const [newsLoading, setNewsLoading] = React.useState(false)
+  const [newsError, setNewsError] = React.useState(null)
+  const [newsTab, setNewsTab] = React.useState('news')
+  // 服务端冷却剩余毫秒（请求过于频繁时用于禁用刷新按钮并倒计时）
+  const [newsCooldown, setNewsCooldown] = React.useState(0)
+  // 大盘概览（下面的大盘轮询与 AI 解读都会用到，必须声明在使用之前）
+  const [market, setMarket] = React.useState(null)
+  const [marketLoading, setMarketLoading] = React.useState(false)
+  // AI 解读
+  const [insight, setInsight] = React.useState({ state: 'idle', text: '', model: '', error: null })
+  // 心跳看到的最新已收盘 bar：与 result.asOf 比对，判断上次预测是否已过期
+  const [latestBar, setLatestBar] = React.useState(null)
+  const lastRunAnchorRef = React.useRef(null)
   const [marketOpen, setMarketOpen] = React.useState(() => inTradingSession())
 
   const abortRef = React.useRef(null)
@@ -123,6 +146,7 @@ export function KitForecastPanel({ ctx }) {
   const resultRef = React.useRef(null)
   const loadPreviewRef = React.useRef(null)
   const autoRefreshRef = React.useRef(false)
+  const activeCodeRef = React.useRef(null)
   const startedRef = React.useRef(0)
   const saveTimerRef = React.useRef(null)
   // 联想请求的令牌：只接受最后一次输入的结果
@@ -181,16 +205,91 @@ export function KitForecastPanel({ ctx }) {
     setNewsLoading(true)
     setNewsError(null)
     try {
-      const data = await fetchNews(code, 12, 12)
+      const data = await fetchNews(code, 12, 12, { force })
       newsCacheRef.current = { code, at: Date.now() }
       setNews({ announcements: data.announcements ?? [], news: data.news ?? [] })
+      // 太快导致的回落：不是错误，只是提示「刚刷新过」，并给出可再刷的秒数
+      const throttled = data.throttled ?? 0
+      setNewsCooldown(Math.max(data.cooldown ?? 0, throttled))
       if (data.errors?.length) setNewsError(data.errors.join('；'))
+      else if (throttled > 0) setNewsError(null)
+      else setNewsError(null)
     } catch (err) {
       setNewsError(err.message)
     } finally {
       setNewsLoading(false)
     }
   }, [])
+
+  /** 大盘概览：20 秒轮询，页面不可见时跳过。 */
+  const loadMarket = React.useCallback(async () => {
+    setMarketLoading(true)
+    try {
+      const data = await fetchMarket()
+      if (data?.ok) setMarket({ indices: data.indices ?? [], breadth: data.breadth ?? null })
+    } catch {
+      // 大盘失败不打扰用户
+    } finally {
+      setMarketLoading(false)
+    }
+  }, [])
+
+  // 刷新冷却倒计时
+  React.useEffect(() => {
+    if (newsCooldown <= 0) return undefined
+    const id = setInterval(() => {
+      setNewsCooldown((prev) => Math.max(0, prev - 1000))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [newsCooldown > 0])
+
+  React.useEffect(() => {
+    loadMarket()
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') loadMarket()
+    }, 20000)
+    return () => clearInterval(id)
+  }, [loadMarket])
+
+  /** 用 DSH 已配置的模型解读当前情况（大盘 + 个股 + 预测 + 消息面）。 */
+  const insightAbortRef = React.useRef(null)
+  const runInsightNow = React.useCallback(async () => {
+    insightAbortRef.current?.abort()
+    const controller = new AbortController()
+    insightAbortRef.current = controller
+    setInsight({ state: 'running', text: '', model: '', error: null })
+    let acc = ''
+    try {
+      await runInsight({
+        code: activeCodeRef.current ?? undefined,
+        scale,
+        market,
+        forecast: resultRef.current,
+        news,
+      }, {
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.t === 'delta') {
+            acc += event.text
+            setInsight((prev) => ({ ...prev, text: acc }))
+          } else if (event.t === 'result') {
+            setInsight((prev) => ({ ...prev, state: 'done', model: event.modelName ?? event.model ?? '' }))
+          } else if (event.t === 'fail') {
+            setInsight({ state: 'error', text: acc, model: '', error: event.message })
+          }
+        },
+      })
+      setInsight((prev) => (prev.state === 'running' ? { ...prev, state: 'done' } : prev))
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        setInsight((prev) => ({ ...prev, state: prev.text ? 'done' : 'idle' }))
+      } else {
+        setInsight({ state: 'error', text: acc, model: '', error: err.message })
+      }
+    } finally {
+      insightAbortRef.current = null
+    }
+  }, [scale, market, news])
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -478,20 +577,6 @@ export function KitForecastPanel({ ctx }) {
    * 现在心跳只读行情（复用 20 秒缓存，几乎零成本），
    * 真正触发的条件是新 bar 收盘、或当前股票/周期刚切过来。
    */
-  const [tickAt, setTickAt] = React.useState(0)
-  const [tickState, setTickState] = React.useState('idle') // idle | ok | fail
-  // 心跳拿到的实时盘口：独立于预测结果，盘中每分钟都会更新
-  const [liveQuote, setLiveQuote] = React.useState(null)
-  // 未收盘那根 K 线：用于图上画一根会长的动态蜡烛
-  const [liveCandle, setLiveCandle] = React.useState(null)
-  // 公告 / 新闻
-  const [news, setNews] = React.useState(null)
-  const [newsLoading, setNewsLoading] = React.useState(false)
-  const [newsError, setNewsError] = React.useState(null)
-  const [newsTab, setNewsTab] = React.useState('news')
-  // 心跳看到的最新已收盘 bar：与 result.asOf 比对，判断上次预测是否已过期
-  const [latestBar, setLatestBar] = React.useState(null)
-  const lastRunAnchorRef = React.useRef(null)
 
   /**
    * 心跳分两件事，不要混为一谈：
@@ -708,6 +793,7 @@ export function KitForecastPanel({ ctx }) {
   const quoteUp = (quote?.changePercent ?? 0) >= 0
   const stale = Boolean(result?.asOf && latestBar && latestBar !== result.asOf)
   const activeCode = selected?.code ?? result?.code ?? null
+  activeCodeRef.current = activeCode
   const activeName = selected?.name ?? result?.name ?? ''
   const pinned = Boolean(watchlist.find((entry) => entry.code === activeCode)?.pinned)
   const chips = visibleWatchlist(watchlist)
@@ -748,6 +834,24 @@ export function KitForecastPanel({ ctx }) {
           </button>
         </div>
       </header>
+
+      <MarketBar
+        data={market}
+        loading={marketLoading}
+        activeCode={activeCode}
+        t={t}
+        onPick={(item) => {
+          // 点指数 = 把它当成标的：加载它的 K 线与预测
+          const picked = { code: item.code, name: item.name }
+          setSelected(picked)
+          setKeyword(`${item.name} ${item.code}`)
+          setResult(null)
+          setOverlays([])
+          setPreviewBars(null)
+          setPhase('idle')
+          loadPreview(item.code, scale)
+        }}
+      />
 
       {setupVisible && (
         <section className="kfc-setup">
@@ -1123,6 +1227,17 @@ export function KitForecastPanel({ ctx }) {
           )}
         </div>
 
+        <InsightPanel
+          state={insight.state}
+          text={insight.text}
+          model={insight.model}
+          error={insight.error}
+          onRun={runInsightNow}
+          onStop={() => insightAbortRef.current?.abort()}
+          onClear={() => setInsight({ state: 'idle', text: '', model: '', error: null })}
+          t={t}
+        />
+
         {activeCode ? (
           <NewsPanel
             data={news}
@@ -1130,6 +1245,8 @@ export function KitForecastPanel({ ctx }) {
             error={newsError}
             tab={newsTab}
             onTab={setNewsTab}
+            onRefresh={() => loadNews(activeCode, { force: true })}
+            cooldown={newsCooldown}
             t={t}
             now={now}
           />

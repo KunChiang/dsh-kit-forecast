@@ -604,9 +604,18 @@ function createServer(ctx, config, paths, overrides = {}) {
           if (!news) news = await feed.digest(norm.code, { notices: 8, newsLimit: 8 }).catch(() => null)
         }
 
+        // 历史预测复盘：前端没传就现算（同一标的、同一周期最近几次的预测 vs 实际）
+        let overlays = Array.isArray(body.overlays) ? body.overlays : null
+        if (!overlays && codeInput && forecast?.asOf) {
+          const scale = asString(body.scale) ?? '1d'
+          const norm = normalizeCode(codeInput)
+          const data = await market.bars(norm.code, scale).catch(() => null)
+          if (data) overlays = overlaysFor(store, norm.code, scale, data.bars, forecast.asOf, 5)
+        }
+
         send({ t: 'stage', message: '生成解读' })
         const result = await insight.stream(
-          { market: marketOverview, stock, forecast, news, scale: body.scale },
+          { market: marketOverview, stock, forecast, news, scale: body.scale, overlays },
           (delta) => send({ t: 'delta', text: delta }),
           abort.signal,
         )
@@ -615,6 +624,36 @@ function createServer(ctx, config, paths, overrides = {}) {
         request.signal.removeEventListener('abort', onAbort)
       }
     })
+  }
+
+  /**
+   * AI 修正预测：模型给末端收益与信心，路径在本地按原分布形态平移生成。
+   * 非流式（结果很短，一次性返回更简单）。
+   */
+  async function handleRefine(request) {
+    const body = await request.json().catch(() => ({}))
+    const forecast = body.forecast
+    if (!forecast?.pathMedian?.length) return failure('kit-forecast/refine', '缺少预测数据，请先跑一次预测')
+
+    let overlays = Array.isArray(body.overlays) ? body.overlays : null
+    const codeInput = asString(body.code) ?? forecast.code
+    if (!overlays && codeInput) {
+      const norm = normalizeCode(codeInput)
+      if (norm) {
+        const data = await market.bars(norm.code, forecast.scale ?? '1d').catch(() => null)
+        if (data) overlays = overlaysFor(store, norm.code, forecast.scale ?? '1d', data.bars, forecast.asOf, 5)
+      }
+    }
+
+    const result = await insight.refine({
+      market: body.market ?? null,
+      stock: body.stock ?? null,
+      forecast,
+      news: body.news ?? null,
+      scale: forecast.scale,
+      overlays,
+    })
+    return noStoreJson({ ok: true, ...result })
   }
 
   /** 公告 + 新闻。任何一路失败都不影响另一路。 */
@@ -843,7 +882,7 @@ function createServer(ctx, config, paths, overrides = {}) {
   return {
     handleStatus, handleSearch, handleQuote, handleBars, handleSetup,
     handleForecast, handleWarm, handleState, handleTick, handleHistory, handleNews,
-    handleMarket, handleInsight, insight,
+    handleMarket, handleInsight, handleRefine, insight,
     store, engine, market, feed,
   }
 }
@@ -965,5 +1004,6 @@ export function apply(ctx, rawConfig) {
     route('/news', server.handleNews)
     route('/market', server.handleMarket)
     route('/insight', server.handleInsight)
+    route('/refine', server.handleRefine)
   })
 }

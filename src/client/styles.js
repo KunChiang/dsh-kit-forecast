@@ -1029,8 +1029,20 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   display: flex;
   align-items: center;
   gap: 12px;
-  /* 左右负边距抵消第一个/最后一个指数块的内边距，文字与搜索框对齐 */
+  /* 左右内边距抵消第一个/最后一个指数块的内边距，文字与搜索框对齐 */
   padding: 0 10px 9px;
+  /* 吸顶在 header 下方：偏移由脚本按 header 实测高度注入，避免被 header 压住 */
+  position: sticky;
+  top: var(--kfc-market-top, 0px);
+  z-index: 5;
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid transparent;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+/* 滚动后加一条分隔线，避免指数文字和下面内容糊在一起 */
+.kfc-market.stuck {
+  border-bottom-color: var(--dsw-alias-border-l1);
+  box-shadow: 0 6px 14px -10px rgba(0, 0, 0, .5);
 }
 .kfc-marketRow {
   flex: 1;
@@ -1184,4 +1196,49 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   animation: kfc-blink 1s steps(2) infinite;
 }
 @keyframes kfc-blink { 50% { opacity: 0 } }
+
+/* AI 修正结果 --------------------------------------------------------- */
+.kfc-refineBox {
+  margin: 10px 12px 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px dashed color-mix(in srgb, #f59e0b 42%, transparent);
+  background: color-mix(in srgb, #f59e0b 7%, transparent);
+}
+.kfc-refineHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.kfc-refineLabel { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.kfc-refineDelta {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
+}
+.kfc-refineDelta b { color: #f59e0b; }
+.kfc-refineConf { font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.kfc-refineReasons {
+  margin: 7px 0 0;
+  padding-left: 16px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-primary);
+}
+.kfc-refineNote {
+  margin-top: 7px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 大盘吸顶 ------------------------------------------------------------- */
+.kfc-marketSticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--dsw-alias-bg-base);
+  padding-top: 4px;
+  margin-bottom: 2px;
+}
 `

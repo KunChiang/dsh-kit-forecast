@@ -132,6 +132,11 @@ export function runInsight(payload, options) {
   return consume('/insight', payload, options)
 }
 
+/** AI 修正预测：非流式，返回修正后的末端收益与路径。 */
+export function refineForecast(payload) {
+  return postJson('/refine', payload)
+}
+
 export function runForecast(payload, options) {
   return consume('/forecast', payload, options)
 }

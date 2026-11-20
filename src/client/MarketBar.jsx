@@ -30,7 +30,36 @@ function BreadthBar({ up, down, flat, t }) {
 
 export function MarketBar({ data, loading, activeCode, onPick, t }) {
   const indices = data?.indices ?? []
-  return h('section', { className: 'kfc-market' },
+  // 滚动到 header 之下时给吸顶条加分隔线
+  const ref = React.useRef(null)
+  const [stuck, setStuck] = React.useState(false)
+  React.useEffect(() => {
+    const node = ref.current
+    const root = node?.closest('.kfc-root')
+    if (!root || !node) return undefined
+
+    // 吸顶偏移必须按 header 实测高度算：写死 55px 会被 header 压住
+    // （header 高度随字体/缩放/是否显示副标题变化）。
+    const sync = () => {
+      const header = root.querySelector('.kfc-header')
+      const offset = header ? Math.round(header.getBoundingClientRect().height) : 0
+      node.style.setProperty('--kfc-market-top', `${offset}px`)
+      setStuck(root.scrollTop > offset - 12)
+    }
+    const onScroll = () => setStuck(root.scrollTop > (ref.current?.offsetTop ?? 0) - 12)
+
+    sync()
+    root.addEventListener('scroll', onScroll, { passive: true })
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : null
+    const header = root.querySelector('.kfc-header')
+    if (observer && header) observer.observe(header)
+    return () => {
+      root.removeEventListener('scroll', onScroll)
+      observer?.disconnect()
+    }
+  }, [])
+
+  return h('section', { className: `kfc-market ${stuck ? 'stuck' : ''}`, ref },
     h('div', { className: 'kfc-marketRow' },
       indices.map((item) => {
         const up = (item.changePercent ?? 0) >= 0

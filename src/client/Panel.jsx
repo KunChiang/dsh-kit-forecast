@@ -1,5 +1,5 @@
 import React from 'react'
-import { fetchBars, fetchHistory, fetchMarket, fetchNews, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runInsight, runSetup, searchStocks } from './api.js'
+import { fetchBars, fetchHistory, fetchMarket, fetchNews, fetchState, fetchStatus, fetchTick, forgetStock, patchState, refineForecast, runForecast, runInsight, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { ProgressOverlay } from './ProgressOverlay.jsx'
 import { InsightPanel } from './InsightPanel.jsx'
@@ -136,6 +136,8 @@ export function KitForecastPanel({ ctx }) {
   const [marketLoading, setMarketLoading] = React.useState(false)
   // AI 解读
   const [insight, setInsight] = React.useState({ state: 'idle', text: '', model: '', error: null })
+  // AI 修正预测
+  const [refine, setRefine] = React.useState({ state: 'idle', path: null, ret: null, originalRet: null, confidence: null, reasons: [], model: '', error: null })
   // 心跳看到的最新已收盘 bar：与 result.asOf 比对，判断上次预测是否已过期
   const [latestBar, setLatestBar] = React.useState(null)
   const lastRunAnchorRef = React.useRef(null)
@@ -290,6 +292,37 @@ export function KitForecastPanel({ ctx }) {
       insightAbortRef.current = null
     }
   }, [scale, market, news])
+
+  /** 让模型修正这次预测（只调一次，非流式）。 */
+  const runRefine = React.useCallback(async () => {
+    const forecast = resultRef.current
+    if (!forecast) return
+    setRefine({ state: 'running', path: null, ret: null, originalRet: null, confidence: null, reasons: [], model: '', error: null })
+    try {
+      const data = await refineForecast({
+        code: forecast.code,
+        market,
+        stock: liveQuote ?? null,
+        forecast,
+        news,
+        overlays,
+      })
+      setRefine({
+        state: 'done',
+        path: data.path ?? null,
+        ret: data.clampedRet ?? data.ret ?? null,
+        rawRet: data.ret ?? null,
+        originalRet: data.originalRet ?? null,
+        confidence: data.confidence ?? null,
+        reasons: data.reasons ?? [],
+        model: data.modelName ?? data.model ?? '',
+        outOfBand: data.outOfBand === true,
+        error: null,
+      })
+    } catch (err) {
+      setRefine({ state: 'error', path: null, ret: null, originalRet: null, confidence: null, reasons: [], model: '', error: err.message })
+    }
+  }, [market, liveQuote, news, overlays])
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -674,6 +707,7 @@ export function KitForecastPanel({ ctx }) {
     // 换了股票：旧预测属于另一只股票，必须清掉，否则图表还停在上一只
     if (result && (result.code !== item.code || result.scale !== valid)) {
       setResult(null)
+      setRefine({ state: 'idle', path: null, ret: null, originalRet: null, confidence: null, reasons: [], model: '', error: null })
       setOverlays([])
       setPhase('idle')
       setError(null)
@@ -934,6 +968,7 @@ export function KitForecastPanel({ ctx }) {
               setOverlays([])
               setPreviewBars(null)
               setPhase('idle')
+              setRefine({ state: 'idle', path: null, ret: null, originalRet: null, confidence: null, reasons: [], model: '', error: null })
               loadPreview(code, next)
             }
           }}
@@ -1137,6 +1172,7 @@ export function KitForecastPanel({ ctx }) {
               livePrice={Number.isFinite(quote?.price) ? quote.price : null}
               liveCandle={liveCandle}
               realizedBars={realizedBars}
+              refined={refine.path}
             />
             {isPreview ? (
               <div className="kfc-previewBar">
@@ -1235,6 +1271,9 @@ export function KitForecastPanel({ ctx }) {
           onRun={runInsightNow}
           onStop={() => insightAbortRef.current?.abort()}
           onClear={() => setInsight({ state: 'idle', text: '', model: '', error: null })}
+          refine={refine}
+          onRefine={runRefine}
+          canRefine={Boolean(result)}
           t={t}
         />
 

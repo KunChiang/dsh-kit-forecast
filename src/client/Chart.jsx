@@ -59,6 +59,8 @@ export function ForecastChart({
   data, height = 320, overlays = null, livePrice = null, liveCandle = null,
   // 预测发出后真实走出来的 bar（按时间戳对齐到预测窗口上）
   realizedBars = null,
+  // AI 修正后的路径（虚线，按时间戳对齐）
+  refined = null,
 }) {
   const canvasRef = React.useRef(null)
   const wrapRef = React.useRef(null)
@@ -280,6 +282,26 @@ export function ForecastChart({
         paired ? -pairOffset : 0, paired ? 0.62 : 1)
     })
 
+    // AI 修正路径：虚线叠在预测中位线上
+    if (Array.isArray(refined) && refined.length > 0 && nPred > 0) {
+      const byTime = new Map(refined.map((p) => [p.t, p.c]))
+      ctx.save()
+      ctx.beginPath()
+      ctx.setLineDash([4, 3])
+      ctx.strokeStyle = 'rgba(245,158,11,0.95)'
+      ctx.lineWidth = 1.6
+      let started = false
+      for (let i = 0; i < nPred; i += 1) {
+        const value = byTime.get(predTimes[i])
+        if (!Number.isFinite(value) || !inView(nHist + i)) continue
+        const x = xOf(nHist + i)
+        const y = yOf(value)
+        if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
+      }
+      ctx.stroke()
+      ctx.restore()
+    }
+
     // 已实现的真实 K 线
     if (realizedByTime.size > 0) {
       for (let i = 0; i < nPred; i += 1) {
@@ -493,7 +515,7 @@ export function ForecastChart({
       }
     }
     // 注意：livePrice / overlays / liveCandle / view 都必须进依赖，否则画布不重绘
-  }, [data, height, hover, hoverPos, overlays, livePrice, liveCandle, realizedBars, view])
+  }, [data, height, hover, hoverPos, overlays, livePrice, liveCandle, realizedBars, refined, view])
 
   React.useEffect(() => {
     draw()

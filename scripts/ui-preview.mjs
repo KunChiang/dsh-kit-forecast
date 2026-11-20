@@ -100,8 +100,12 @@ const ctx = {
     llm: {
       listProviders: () => [{ id: 'preview', name: 'Preview' }],
       listModels: async () => [{ id: 'preview-model', name: 'preview-model' }],
-      stream: () => (async function* () {
-        const text = '【预览】这是一段由假模型生成的解读示例。\n1. 大盘普跌，上证 -1.23%、创业板 -3.54%。\n2. 个股预测中位 -0.81%，上涨概率 25%。\n3. 风险点：量能萎缩下的继续调整。'
+      stream: (opts) => (async function* () {
+        // 修正请求要回 JSON，解读请求回文字
+        const isRefine = /只输出一个 JSON 对象/.test(String(opts?.messages?.[0]?.content?.[0]?.text ?? ''))
+        const text = isRefine
+          ? '{"ret": -0.0065, "confidence": 0.62, "reasons": ["大盘普跌压制弹性", "消息面偏中性", "近期预测偏高估"]}'
+          : '【预览】这是一段由假模型生成的解读示例。\n1. 大盘普跌，上证 -1.23%、创业板 -3.54%。\n2. 个股预测中位 -0.81%，上涨概率 25%。\n3. 风险点：量能萎缩下的继续调整。'
         for (const ch of text) {
           await new Promise((r) => setTimeout(r, 4))
           yield { type: 'text-delta', text: ch }

@@ -196,17 +196,49 @@ export class InsightService {
     this.modelCacheAt = 0
   }
 
-  /** 挑一个能用的对话模型：会话默认优先，否则目录里第一个。 */
-  async resolveModel() {
-    if (this.modelCache && Date.now() - this.modelCacheAt < 60 * 1000) return this.modelCache
+  /** 列出可选的对话模型（给设置弹窗用）。 */
+  async catalog() {
+    const llm = this.ctx?.llm
+    if (!llm?.listProviders) return []
+    const out = []
+    for (const provider of llm.listProviders() ?? []) {
+      const providerId = provider?.id
+      if (!providerId) continue
+      let models = []
+      try {
+        models = (await llm.listModels(providerId)) ?? []
+      } catch {
+        continue
+      }
+      for (const model of models) {
+        if (!model?.id) continue
+        if (NON_CHAT.test(String(model.id)) || NON_CHAT.test(String(model.name ?? ''))) continue
+        out.push({
+          provider: providerId,
+          model: String(model.id),
+          name: String(model.name ?? model.id),
+          label: `${provider?.name ?? providerId} · ${model.name ?? model.id}`,
+        })
+      }
+    }
+    return out
+  }
+
+  /**
+   * 挑一个能用的对话模型：用户指定优先，其次会话默认，最后目录里第一个。
+   * @param {{provider?: string, model?: string}} [preferred] 用户设置里指定的模型
+   */
+  async resolveModel(preferred) {
+    const wanted = preferred?.provider && preferred?.model ? preferred : null
+    if (!wanted && this.modelCache && Date.now() - this.modelCacheAt < 60 * 1000) return this.modelCache
 
     const llm = this.ctx?.llm
     if (!llm?.listProviders) throw new Error('当前部署没有可用的模型服务（ctx.llm）')
 
-    let preferred = null
+    let sessionDefault = null
     try {
-      const current = this.ctx.get('agentDefaultModel')?.currentSelection?.()
-      if (current?.provider && current?.model) preferred = { provider: current.provider, model: current.model }
+      const current = this.ctx.get?.('agentDefaultModel')?.currentSelection?.()
+      if (current?.provider && current?.model) sessionDefault = { provider: current.provider, model: current.model }
     } catch {
       // 拿不到就用目录里第一个
     }
@@ -230,10 +262,14 @@ export class InsightService {
     }
     if (candidates.length === 0) throw new Error('没有可用的对话模型，请先在设置里配置一个 provider')
 
-    const chosen = (preferred && candidates.find((c) => c.provider === preferred.provider && c.model === preferred.model))
-      || candidates[0]
-    this.modelCache = chosen
-    this.modelCacheAt = Date.now()
+    const match = (target) => target
+      && candidates.find((c) => c.provider === target.provider && c.model === target.model)
+    const chosen = match(wanted) || match(sessionDefault) || candidates[0]
+    // 用户指定的模型设为缓存（不改缓存键，命中的是同一份目录）
+    if (!wanted) {
+      this.modelCache = chosen
+      this.modelCacheAt = Date.now()
+    }
     return chosen
   }
 
@@ -241,8 +277,8 @@ export class InsightService {
    * AI 修正预测：非流式，返回结构化结果。
    * 模型只给末端收益与信心，路径由 buildCorrectedPath 在本地生成。
    */
-  async refine(payload) {
-    const model = await this.resolveModel()
+  async refine(payload, preferredModel) {
+    const model = await this.resolveModel(preferredModel)
     const prompt = buildPrompt({ ...payload, correction: true })
     if (prompt === null) throw new Error('没有可修正的预测')
 
@@ -284,8 +320,8 @@ export class InsightService {
    * @param {(text: string) => void} onDelta
    * @param {AbortSignal} signal
    */
-  async stream(payload, onDelta, signal) {
-    const model = await this.resolveModel()
+  async stream(payload, onDelta, signal, preferredModel) {
+    const model = await this.resolveModel(preferredModel)
     const prompt = buildPrompt(payload)
     if (prompt === null) throw new Error('没有可解读的数据（先选一只股票或加载大盘）')
 

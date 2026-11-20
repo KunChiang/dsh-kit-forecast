@@ -1241,4 +1241,109 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   padding-top: 4px;
   margin-bottom: 2px;
 }
+
+/* 设置按钮与弹窗 -------------------------------------------------------- */
+.kfc-iconBtn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.kfc-iconBtn:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
+.kfc-iconBtn.on { color: var(--dsw-alias-brand-primary); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); }
+
+.kfc-modalMask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .42);
+  animation: kfc-fadeIn .14s ease;
+}
+.kfc-modal {
+  width: min(460px, 100%);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 22px 56px rgba(0, 0, 0, .34);
+  overflow: hidden;
+}
+.kfc-modalHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.kfc-modalHead b { flex: 1; font-size: 13.5px; }
+.kfc-modalClose { padding: 2px 8px; }
+.kfc-modalBody { padding: 14px 16px 16px; overflow: auto; }
+
+.kfc-field { display: flex; flex-direction: column; gap: 5px; }
+.kfc-fieldLabel { font-size: 12.5px; font-weight: 600; }
+.kfc-fieldHint { font-size: 11.5px; line-height: 1.55; color: var(--dsw-alias-label-secondary); }
+.kfc-modalHint, .kfc-modalEmpty {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+.kfc-modalError {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.kfc-modelList {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 300px;
+  overflow: auto;
+}
+.kfc-modelItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.kfc-modelItem:hover { background: var(--dsw-alias-bg-layer-2); }
+.kfc-modelItem.active {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent);
+}
+.kfc-modelName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kfc-modelHint { font-size: 10.5px; color: var(--dsw-alias-label-secondary); }
+.kfc-modelCheck { color: var(--dsw-alias-brand-primary); font-size: 12px; }
+
+.kfc-modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
 `

@@ -98,8 +98,10 @@ const ctx = {
     },
     // 预览用的假模型：验证「AI 解读」的流式链路（真实部署里由 DSH 注入 ctx.llm）
     llm: {
-      listProviders: () => [{ id: 'preview', name: 'Preview' }],
-      listModels: async () => [{ id: 'preview-model', name: 'preview-model' }],
+      listProviders: () => [{ id: 'preview', name: 'Preview' }, { id: 'preview2', name: 'Preview 2' }],
+      listModels: async (id) => (id === 'preview'
+        ? [{ id: 'preview-model', name: 'preview-model' }, { id: 'text-embedding-3', name: 'embedding' }]
+        : [{ id: 'preview-big', name: 'preview-big' }]),
       stream: (opts) => (async function* () {
         // 修正请求要回 JSON，解读请求回文字
         const isRefine = /只输出一个 JSON 对象/.test(String(opts?.messages?.[0]?.content?.[0]?.text ?? ''))

@@ -1,9 +1,10 @@
 import React from 'react'
-import { fetchBars, fetchHistory, fetchMarket, fetchNews, fetchState, fetchStatus, fetchTick, forgetStock, patchState, refineForecast, runForecast, runInsight, runSetup, searchStocks } from './api.js'
+import { fetchBars, fetchHistory, fetchMarket, fetchModels, fetchNews, fetchState, fetchStatus, fetchTick, forgetStock, patchState, refineForecast, runForecast, runInsight, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
 import { ProgressOverlay } from './ProgressOverlay.jsx'
 import { InsightPanel } from './InsightPanel.jsx'
 import { MarketBar } from './MarketBar.jsx'
+import { SettingsDialog } from './SettingsDialog.jsx'
 import { NewsPanel } from './NewsPanel.jsx'
 import { Select } from './Select.jsx'
 import { NS } from './i18n.js'
@@ -58,6 +59,27 @@ function StatCard({ label, value, hint, tone, stale }) {
       <div className={`kfc-statValue ${tone ?? ''}`}>{value}</div>
       {hint ? <div className="kfc-statHint">{hint}</div> : null}
     </div>
+  )
+}
+
+/** 齿轮图标：打开设置。 */
+function SettingsIcon({ onClick, active, label }) {
+  return (
+    <button
+      type="button"
+      className={`kfc-iconBtn ${active ? 'on' : ''}`}
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.6" />
+        <path
+          d="M19.1 13.9a7.7 7.7 0 000-3.8l1.6-1.2-1.9-3.2-1.9.8a7.6 7.6 0 00-3.3-1.9L13.3 2.5h-3.6l-.3 2.1a7.6 7.6 0 00-3.3 1.9l-1.9-.8L2.3 8.9l1.6 1.2a7.7 7.7 0 000 3.8l-1.6 1.2 1.9 3.2 1.9-.8a7.6 7.6 0 003.3 1.9l.3 2.1h3.6l.3-2.1a7.6 7.6 0 003.3-1.9l1.9.8 1.9-3.2-1.6-1.2z"
+          stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"
+        />
+      </svg>
+    </button>
   )
 }
 
@@ -136,6 +158,12 @@ export function KitForecastPanel({ ctx }) {
   const [marketLoading, setMarketLoading] = React.useState(false)
   // AI 解读
   const [insight, setInsight] = React.useState({ state: 'idle', text: '', model: '', error: null })
+  // 设置弹窗：目前只有「AI 用哪个模型」
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
+  const [models, setModels] = React.useState([])
+  const [modelsLoading, setModelsLoading] = React.useState(false)
+  const [modelsError, setModelsError] = React.useState(null)
+  const [modelChoice, setModelChoice] = React.useState(null) // { provider, model } | null
   // AI 修正预测
   const [refine, setRefine] = React.useState({ state: 'idle', path: null, ret: null, originalRet: null, confidence: null, reasons: [], model: '', error: null })
   // 心跳看到的最新已收盘 bar：与 result.asOf 比对，判断上次预测是否已过期
@@ -268,6 +296,8 @@ export function KitForecastPanel({ ctx }) {
         market,
         forecast: resultRef.current,
         news,
+        overlays,
+        model: modelChoice,
       }, {
         signal: controller.signal,
         onEvent: (event) => {
@@ -291,7 +321,7 @@ export function KitForecastPanel({ ctx }) {
     } finally {
       insightAbortRef.current = null
     }
-  }, [scale, market, news])
+  }, [scale, market, news, overlays, modelChoice])
 
   /** 让模型修正这次预测（只调一次，非流式）。 */
   const runRefine = React.useCallback(async () => {
@@ -306,6 +336,7 @@ export function KitForecastPanel({ ctx }) {
         forecast,
         news,
         overlays,
+        model: modelChoice,
       })
       setRefine({
         state: 'done',
@@ -322,7 +353,25 @@ export function KitForecastPanel({ ctx }) {
     } catch (err) {
       setRefine({ state: 'error', path: null, ret: null, originalRet: null, confidence: null, reasons: [], model: '', error: err.message })
     }
-  }, [market, liveQuote, news, overlays])
+  }, [market, liveQuote, news, overlays, modelChoice])
+
+  const loadModels = React.useCallback(async () => {
+    setModelsLoading(true)
+    setModelsError(null)
+    try {
+      const data = await fetchModels()
+      setModels(data.items ?? [])
+    } catch (err) {
+      setModelsError(err.message)
+      setModels([])
+    } finally {
+      setModelsLoading(false)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (settingsOpen) loadModels()
+  }, [settingsOpen, loadModels])
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -342,6 +391,11 @@ export function KitForecastPanel({ ctx }) {
       patchState(patch).catch(() => {})
     }, 400)
   }, [])
+
+  const chooseModel = React.useCallback((choice) => {
+    setModelChoice(choice)
+    persist({ prefs: { model: choice } })
+  }, [persist])
 
   // 首次挂载：恢复上次的股票、周期、参数与预测结果
   React.useEffect(() => {
@@ -372,6 +426,10 @@ export function KitForecastPanel({ ctx }) {
         if (typeof prefs.autoRefresh === 'boolean') setAutoRefresh(prefs.autoRefresh)
         if (typeof prefs.comparePast === 'boolean') setComparePast(prefs.comparePast)
         if (typeof prefs.incremental === 'boolean') setIncremental(prefs.incremental)
+        if (prefs.model && typeof prefs.model === 'object'
+          && typeof prefs.model.provider === 'string' && typeof prefs.model.model === 'string') {
+          setModelChoice({ provider: prefs.model.provider, model: prefs.model.model })
+        }
         const last = state.last
         // 只恢复「仍在常用列表里」的股票：用户删掉之后不该又被 last 复活
         const remembered = Array.isArray(state.watchlist)
@@ -866,6 +924,11 @@ export function KitForecastPanel({ ctx }) {
           >
             {ready ? t('envReady') : t('envMissing')}
           </button>
+          <SettingsIcon
+            onClick={() => setSettingsOpen(true)}
+            active={Boolean(modelChoice)}
+            label={t('settingsOpen')}
+          />
         </div>
       </header>
 
@@ -1293,6 +1356,18 @@ export function KitForecastPanel({ ctx }) {
 
         <div className="kfc-footNote">{ready || !status ? t('footNote') : t('footModelMissing')}</div>
       </section>
+
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        models={models}
+        loading={modelsLoading}
+        error={modelsError}
+        selected={modelChoice}
+        onSelect={chooseModel}
+        onRefresh={loadModels}
+        t={t}
+      />
     </div>
   )
 }

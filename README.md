@@ -214,6 +214,21 @@ KiT 的输入是 **5 维**（`in_features=5`），特征是 `r_gap / r_body / r_
 - 修正值会被夹在 KiT 的 q05~q95 之间；越界会夹回并明确标注原始值
 - 这是辅助参考，不是替代模型输出
 
+### 设置
+
+右上角齿轮打开设置弹窗，目前可指定「AI 解读与修正使用哪个模型」：
+
+- **跟随会话默认模型**（默认）：由 DSH 决定
+- 或从列表里选一个具体模型；列表来自 `ctx.llm.listProviders()` / `listModels()`，会自动过滤
+  embedding / rerank 这类非对话模型
+- 选择会存进 `state.json` 的 `prefs.model`，重启后仍然生效
+- 没有配置任何 provider 时，弹窗会提示去 DSH 设置里先配置，而不是空白
+
+> ⚠️ **依赖声明**：DSH 要求插件在**模块顶层**声明用到的服务，否则访问 `ctx.llm` 会直接抛
+> `cannot get property "llm" without inject`。本插件声明为
+> `export const inject = { required: [], optional: ['llm'] }` —— llm 是可选，
+> 没配模型时 K 线、预测、大盘、消息面照常工作，只有解读/修正会提示缺模型。
+
 ### AI 解读
 
 把「大盘 + 当前个股行情 + KiT 预测分布 + 公告新闻」交给 **DSH 里已配置的模型**，流式生成一段中文解读。
@@ -401,6 +416,7 @@ dsh plugin --profile desktop add /abs/path/to/dsh-kit-forecast
 | `POST /market` | 大盘概览：8 个主要指数的报价 + 涨跌家数 |
 | `POST /insight` | AI 解读（SSE 流式，含历史预测准确性复盘） |
 | `POST /refine` | AI 修正预测（返回修正末端收益 + 本地生成的修正路径） |
+| `POST /models` | 可选模型目录（过滤非对话模型；llm 不可用时返回空列表） |
 
 ## 目录结构
 
@@ -423,7 +439,7 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 - **和官方参考对齐**：用官方 demo 数据（`300591.SZ` 5m，anchor 2026-01-23）跑同一套窗口构造与采样，
   得到的末端收益中位数 −4.8%（官方发布结果 −5.6%，差异来自随机种子），随后 96 根真实 bar 的实际值 −5.8%，
   说明特征、规范化、日历特征与采样器与论文实现一致。
-- **测试覆盖**（`npm test`，92 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
+- **测试覆盖**（`npm test`，97 项）：代码归一化、会话网格过滤、未收盘 bar 剔除、前复权因子匹配、
   `/forecast` 的 SSE 事件顺序、种子可复现性、涨跌停幅度推断、K 线不足与非法输入的报错路径；
   状态文件读写/合并/损坏回落/外部改动检测、常用股票排序与上限、相对时间格式化；
   `/state`、`/tick`、`/history` 的路由契约；历史预测与真实 bar 的对齐、未实现部分留空、评分字段；
@@ -436,7 +452,8 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
   公告新闻的标签清洗、路由校验、单边失败容错；
   大盘指数与个股同号的区分、指数不受涨跌停约束、/market 结构完整；
   AI 解读的提示词不含 undefined、无数据时拒绝、跳过非对话模型；
-  历史复盘进提示词、修正 JSON 的宽容解析与越界夹回、修正路径末端对齐。
+  历史复盘进提示词、修正 JSON 的宽容解析与越界夹回、修正路径末端对齐；
+  inject 声明（llm 必须声明且为可选）、/models 过滤与降级、用户指定模型优先。
   **指数不在 KiT 训练池**，指数预测的校准度弱于个股，需如实看待。
   其中一项会用真实权重跑两次预测，断言两条结果逐位相同。
 
@@ -452,12 +469,12 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.7.0`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.7.1`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |
 | 推理设备 | Apple M4 / `mps`，fp32；首次加载权重约 4–5 秒 |
-| 自检 | `npm test` 92 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
+| 自检 | `npm test` 97 项全过（含真实权重的确定性对比）；`npm run check` 走通 status/search/quote/bars/forecast |
 
 浏览器半是随插件加载的模块，需要 **重启一次 Harness**（或重开桌面窗口）让它进入新的模块代，
 侧栏才会出现「KiT 走势预测」；Host 半的路由已经随安装即时生效。

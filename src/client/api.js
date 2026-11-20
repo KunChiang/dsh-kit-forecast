@@ -40,6 +40,11 @@ export function fetchTick(code, scale) {
   return postJson('/tick', { code, scale })
 }
 
+/** 可选模型目录（设置弹窗用）。 */
+export function fetchModels() {
+  return postJson('/models', {})
+}
+
 /** 大盘概览：主要指数报价 + 涨跌家数。 */
 export function fetchMarket() {
   return postJson('/market', {})

@@ -926,7 +926,9 @@ export const STYLES = `
 
 /* 公告 / 新闻 ---------------------------------------------------------- */
 .kfc-news {
-  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1);
@@ -936,11 +938,13 @@ export const STYLES = `
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
+  flex: none;
+  height: 46px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 .kfc-newsTitle {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   letter-spacing: .04em;
   margin-right: 4px;
@@ -971,10 +975,11 @@ export const STYLES = `
 .kfc-newsError { color: var(--dsw-alias-state-warn-primary); }
 
 .kfc-newsList {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
   padding: 4px 0;
   list-style: none;
-  max-height: 208px;
   overflow: auto;
 }
 .kfc-newsItem {
@@ -1017,6 +1022,10 @@ export const STYLES = `
 }
 a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: underline; }
 .kfc-newsEmpty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 14px 12px;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
@@ -1131,7 +1140,9 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
 
 /* AI 解读 -------------------------------------------------------------- */
 .kfc-insight {
-  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1);
@@ -1142,11 +1153,13 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  flex: none;
+  height: 46px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 .kfc-insightTitle {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   letter-spacing: .04em;
 }
@@ -1162,19 +1175,34 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
   white-space: nowrap;
 }
 .kfc-insightSpacer { flex: 1; }
-.kfc-insightRun { padding: 4px 14px; }
+.kfc-insightBar button {
+  padding: 5px 12px;
+  font-size: 12px;
+  line-height: 18px;
+  border-radius: 7px;
+}
+.kfc-insightBar .kfc-insightRun { padding: 5px 14px; }
 .kfc-insightText {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 12px 14px;
   font-size: 12.5px;
   line-height: 1.72;
   word-break: break-word;
-  max-height: 340px;
   overflow: auto;
   color: var(--dsw-alias-label-primary);
 }
 .kfc-insightHint {
-  padding: 14px;
+  /* 与消息面并排时未生成解读的卡片会被拉到同高，
+     这里撑满并垂直居中，避免上方一大片空白像加载失败 */
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 14px 20px;
   font-size: 12px;
+  line-height: 1.65;
   color: var(--dsw-alias-label-secondary);
 }
 .kfc-insightError {
@@ -1426,4 +1454,30 @@ a.kfc-newsLink:hover { color: var(--dsw-alias-brand-primary); text-decoration: u
 /* 涨跌幅配色（仅 Markdown 内） */
 .kfc-mdUp { color: var(--dsw-alias-state-danger-primary); }
 .kfc-mdDown { color: var(--dsw-alias-state-success-primary); }
+
+/* 解读 + 消息面 并排 --------------------------------------------------- */
+.kfc-infoGrid {
+  flex: none;
+  display: grid;
+  /* 解读内容更长，给多一点宽度；消息面条目短，窄一点够用 */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  /* 两栏同高，避免一长一短看起来松散 */
+  max-height: 460px;
+  min-height: 168px;
+}
+.kfc-infoGrid > * { min-height: 0; }
+
+/* 只显示了其中一栏时（未选股票），让它占满整行 */
+.kfc-infoGrid > :only-child { grid-column: 1 / -1; max-height: 320px; }
+
+@container kfc (max-width: 900px) {
+  .kfc-infoGrid {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: none;
+  }
+  .kfc-infoGrid > .kfc-insight { max-height: 320px; }
+  .kfc-infoGrid > .kfc-news { max-height: 300px; }
+}
 `

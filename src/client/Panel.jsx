@@ -1326,33 +1326,40 @@ export function KitForecastPanel({ ctx }) {
           )}
         </div>
 
-        <InsightPanel
-          state={insight.state}
-          text={insight.text}
-          model={insight.model}
-          error={insight.error}
-          onRun={runInsightNow}
-          onStop={() => insightAbortRef.current?.abort()}
-          onClear={() => setInsight({ state: 'idle', text: '', model: '', error: null })}
-          refine={refine}
-          onRefine={runRefine}
-          canRefine={Boolean(result)}
-          t={t}
-        />
-
-        {activeCode ? (
-          <NewsPanel
-            data={news}
-            loading={newsLoading}
-            error={newsError}
-            tab={newsTab}
-            onTab={setNewsTab}
-            onRefresh={() => loadNews(activeCode, { force: true })}
-            cooldown={newsCooldown}
+        {/*
+          解读与消息面并排：两者都是「信息类」面板，一个按段落读、一个按条目扫，
+          并排可以同时看到，也比上下堆叠省一屏高度。
+          窄容器（侧边栏拖窄时）自动回落成上下堆叠，见 .kfc-infoGrid 的容器查询。
+        */}
+        <div className="kfc-infoGrid">
+          <InsightPanel
+            state={insight.state}
+            text={insight.text}
+            model={insight.model}
+            error={insight.error}
+            onRun={runInsightNow}
+            onStop={() => insightAbortRef.current?.abort()}
+            onClear={() => setInsight({ state: 'idle', text: '', model: '', error: null })}
+            refine={refine}
+            onRefine={runRefine}
+            canRefine={Boolean(result)}
             t={t}
-            now={now}
           />
-        ) : null}
+
+          {activeCode ? (
+            <NewsPanel
+              data={news}
+              loading={newsLoading}
+              error={newsError}
+              tab={newsTab}
+              onTab={setNewsTab}
+              onRefresh={() => loadNews(activeCode, { force: true })}
+              cooldown={newsCooldown}
+              t={t}
+              now={now}
+            />
+          ) : null}
+        </div>
 
         <div className="kfc-footNote">{ready || !status ? t('footNote') : t('footModelMissing')}</div>
       </section>

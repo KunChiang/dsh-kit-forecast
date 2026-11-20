@@ -336,7 +336,8 @@ class Engine:
                 t_next = origin * (1.0 - (i + 1) / steps)
                 dt = t_cur - t_next
                 if progress:
-                    progress("sample", i, steps, f"采样第 {i + 1}/{steps} 步")
+                    # 步数由前端进度环展示，这里只给阶段名，避免标题和副标题重复
+                    progress("sample", i, steps, "扩散采样")
                 v1 = forward(z_tgt, t_cur)
                 z_tgt = z_tgt - dt * v1
                 del v1

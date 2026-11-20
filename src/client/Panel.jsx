@@ -1,6 +1,7 @@
 import React from 'react'
 import { fetchBars, fetchHistory, fetchState, fetchStatus, fetchTick, forgetStock, patchState, runForecast, runSetup, searchStocks } from './api.js'
 import { ForecastChart } from './Chart.jsx'
+import { ProgressOverlay } from './ProgressOverlay.jsx'
 import { NS } from './i18n.js'
 import { inTradingSession, relativeTime, sortWatchlist, togglePin, touchWatchlist, visibleWatchlist } from './store.js'
 
@@ -975,24 +976,6 @@ export function KitForecastPanel({ ctx }) {
           </div>
         ) : null}
 
-        {showProgressPane && (
-          <div className="kfc-progressPane">
-            <div className="kfc-progressHead">
-              <span className="kfc-spinner" />
-              <b>{stage || t('working')}</b>
-              <span className="kfc-elapsed">{elapsed.toFixed(1)}s</span>
-            </div>
-            <div className="kfc-bar">
-              <i style={{ width: `${progressPct}%` }} />
-            </div>
-            <div className="kfc-progressHint">{t('progressHint')}</div>
-            <div className="kfc-setupActions">
-              <button type="button" className="kfc-ghost" onClick={() => abortRef.current?.abort()}>
-                {t('cancel')}
-              </button>
-            </div>
-          </div>
-        )}
 
         {error && !running && (
           <div className="kfc-errorPane">
@@ -1002,7 +985,8 @@ export function KitForecastPanel({ ctx }) {
           </div>
         )}
 
-        {chartData && (
+        <div className="kfc-canvasArea">
+          {chartData && (
           <div className={`kfc-resultPane ${refreshing ? 'refreshing' : ''}`}>
             {refreshing && (
               <div className="kfc-refreshBar">
@@ -1084,7 +1068,7 @@ export function KitForecastPanel({ ctx }) {
           </div>
         )}
 
-        {!chartData && !running && !error && (
+        {!chartData && !error && (
           <div className="kfc-empty">
             <PanelIcon size={32} />
             <div className="kfc-emptyTitle">{t('emptyTitle')}</div>
@@ -1092,6 +1076,19 @@ export function KitForecastPanel({ ctx }) {
             {chips.length === 0 ? <div className="kfc-emptyHint">{t('emptyHint')}</div> : null}
           </div>
         )}
+
+          {/* 预测进行中：盖在图上，不动布局 */}
+          {showProgressPane && (
+            <ProgressOverlay
+              steps={progress.step}
+              total={progress.total}
+              stage={stage}
+              elapsed={elapsed}
+              onCancel={() => abortRef.current?.abort()}
+              labels={{ working: t('working'), cancel: t('cancel'), stepsUnit: t('stepsUnit') }}
+            />
+          )}
+        </div>
 
         <div className="kfc-footNote">{ready || !status ? t('footNote') : t('footModelMissing')}</div>
       </section>

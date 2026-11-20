@@ -153,6 +153,12 @@ flow matching 积分——没有 AR 模型那种 token-by-token 的自回归结�
 
 页面切回前台、或窗口重新获得焦点时会立刻补一次心跳，不用等下一个间隔。
 
+### 预测进度
+
+预测进行中时，图上会盖一层半透明的轻量卡片：圆环百分比 + 阶段名 + 「步 3/12 · 21.0s」+ 取消。
+图表本身仍然可见，不会像之前那样把图表往下挤。采样阶段圆环会随扩散步数推进；
+卡在「读取 checkpoint」时圆环显示 `···`（还不知道总步数）。
+
 ### 刷新时不会闪
 
 「实时跟随」和手动「重新预测」都是**非破坏式**的：旧图一直留在屏幕上，
@@ -339,7 +345,7 @@ scripts/build.mjs       esbuild 打包 client + 复制 host 到 lib/
 
 | 项 | 值 |
 | --- | --- |
-| 插件 | `dsh-kit-forecast@1.4.3`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
+| 插件 | `dsh-kit-forecast@1.4.4`，已装进 `desktop` profile（Plugin Manager 安装，立即生效） |
 | 运行时目录 | `~/Library/Application Support/dsh-desktop/harness/kit-forecast` |
 | 虚拟环境 | `…/kit-forecast/venv`（Python 3.12 + torch 2.15.0 + numpy 2.2.6 + pandas 2.3.3） |
 | 权重 | `…/kit-forecast/ckpt/step_market_284M.pt`（1.07 GiB，官方 KiT-L） |

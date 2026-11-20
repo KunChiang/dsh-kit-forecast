@@ -731,4 +731,78 @@ export const STYLES = `
 .kfc-staleBar .kfc-dot { color: var(--dsw-alias-brand-primary); background: currentColor; }
 .kfc-staleBar span:nth-child(2) { flex: 1; min-width: 0; }
 .kfc-staleBar button { padding: 3px 10px; }
+
+/* 预测进度覆盖层 ------------------------------------------------------- */
+.kfc-canvasArea { position: relative; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+
+.kfc-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  /* 只轻微压暗，让图表仍然清晰可读（之前 42% 太黑，图像糊成一片） */
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 18%, transparent);
+  animation: kfc-fadeIn .18s ease;
+}
+@keyframes kfc-fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+.kfc-overlayCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  min-width: 320px;
+  border-radius: 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 96%, transparent);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .28);
+}
+
+.kfc-ring {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  color: var(--dsw-alias-brand-primary);
+}
+.kfc-ring svg { position: absolute; inset: 0; }
+.kfc-ringText {
+  position: relative;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
+  letter-spacing: .01em;
+}
+
+.kfc-overlayText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.kfc-overlayText b {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kfc-overlayText span {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.kfc-overlayCancel { flex: none; padding: 5px 11px; }
+
+@container kfc (max-width: 560px) {
+  .kfc-overlayCard { min-width: 0; width: calc(100% - 32px); gap: 10px; padding: 12px 14px; }
+  .kfc-overlayCancel { padding: 4px 8px; }
+}
 `

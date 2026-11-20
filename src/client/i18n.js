@@ -61,6 +61,7 @@ export const zh = {
   needStock: '请先输入股票代码或名称，并从联想列表里选一只股票',
   needSetup: '运行环境还没准备好，请先完成初始化',
   preparing: '准备中…',
+  stepsUnit: '步',
 
   run: '开始预测',
   runForecast: '预测',
@@ -158,6 +159,7 @@ export const en = {
   needStock: 'Pick a stock from the search suggestions first',
   needSetup: 'Runtime is not ready yet; finish setup first',
   preparing: 'Preparing…',
+  stepsUnit: 'steps',
 
   run: 'Forecast',
   runForecast: 'Predict',
